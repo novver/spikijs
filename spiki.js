@@ -79,7 +79,7 @@ const spiki = (() => {
     };
 
     // DOM Ops
-    const s = {
+    const ops = {
         text: (el, v) => el.textContent = v ?? '',
         html: (el, v) => el.innerHTML = v ?? '',
         value: (el, v) => {
@@ -216,17 +216,17 @@ const spiki = (() => {
                     if (!meta) metaMap.set(el, (meta = {}));
                     meta[evt] = value;
 
-                    if (!root._e) root._e = new Set();
-                    if (!root._e.has(evt)) {
+                    if (!root._evts) root._evts = new Set();
+                    if (!root._evts.has(evt)) {
                         root.addEventListener(evt, handleEvent);
-                        root._e.add(evt);
+                        root._evts.add(evt);
                     }
                 } else if (name.startsWith(':')) {
-                    regFx(() => s.attr(el, getValue(scope, value), name.slice(1)), k);
+                    regFx(() => ops.attr(el, getValue(scope, value), name.slice(1)), k);
                 } else if (name.startsWith('s-')) {
                     const dir = name.slice(2);
                     if (dir === 'ref') state.$refs[value] = el;
-                    else if (s[dir]) regFx(() => s[dir](el, getValue(scope, value)), k);
+                    else if (ops[dir]) regFx(() => ops[dir](el, getValue(scope, value)), k);
                 }
             }
 
