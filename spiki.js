@@ -87,15 +87,9 @@ const spiki = (() => {
             else if (el.type === 'radio' && el.name) el.checked = el.value == v;
             else el.value = v ?? '';
         },
-        class: (el, v, old) => {
-            if (old && typeof old === 'string') {
-                old.split(/\s+/).forEach(c => c && el.classList.remove(c));
-            }
-            if (v && typeof v === 'string') {
-                v.split(/\s+/).forEach(c => c && el.classList.add(c));
-                return v;
-            }
-            return '';
+        class: (el, v) => {
+            if (el._oc === undefined) el._oc = el.className;
+            el.className = el._oc + (v ? ' ' + v : '');
         },
         attr: (el, v, arg) => {
             if (v === false || v === null || v === undefined) el.removeAttribute(arg);
@@ -139,7 +133,6 @@ const spiki = (() => {
 
             let val;
 
-            // s-if
             if (val = el.getAttribute('s-if')) {
                 const anchor = document.createTextNode('');
                 el.replaceWith(anchor);
@@ -162,12 +155,10 @@ const spiki = (() => {
                 return;
             }
 
-            // s-for
             if (el.tagName === 'TEMPLATE' && (val = el.getAttribute('s-for'))) {
                 const [, alias, listKey] = val.match(loopRE) || [];
                 const anchor = document.createTextNode('');
                 el.replaceWith(anchor);
-
                 let pool = new Map();
 
                 regFx(() => {
@@ -184,10 +175,8 @@ const spiki = (() => {
                                 const clone = el.content.cloneNode(true);
                                 const itemScope = Object.create(scope);
                                 Object.assign(itemScope, { [alias]: item, $index: i, $parent: scope });
-                                
                                 const nodes = Array.from(clone.childNodes);
                                 const rowK = [];
-                                
                                 nodes.forEach(n => walk(n, itemScope, rowK));
                                 row = { n: nodes, s: itemScope, k: rowK };
                             } else {
@@ -200,13 +189,11 @@ const spiki = (() => {
                                 row.n.forEach(n => frag.appendChild(n));
                                 cursor.parentNode.insertBefore(frag, cursor.nextSibling);
                             }
-                            
                             cursor = row.n[row.n.length - 1];
                             nextPool.set(key, row);
                             pool.delete(key);
                         });
                     }
-                    
                     pool.forEach(row => {
                         row.k.forEach(stop => stop());
                         row.n.forEach(n => n.remove());
@@ -225,7 +212,6 @@ const spiki = (() => {
                     let meta = metaMap.get(el);
                     if (!meta) metaMap.set(el, (meta = {}));
                     meta[evt] = value;
-
                     if (!root._e) root._e = new Set();
                     if (!root._e.has(evt)) {
                         root.addEventListener(evt, handleEvent);
@@ -233,15 +219,9 @@ const spiki = (() => {
                     }
                 } else if (name.startsWith(':')) {
                     const arg = name.slice(1);
-                    if (arg === 'class') {
-                        let prev = '';
-                        regFx(() => {
-                            const current = getValue(scope, value);
-                            prev = ops.class(el, current, prev);
-                        }, k);
-                    } else {
-                        regFx(() => ops.attr(el, getValue(scope, value), arg), k);
-                    }
+                    const handler = arg === 'class' ? ops.class : ops.attr;
+                    regFx(() => handler(el, getValue(scope, value), arg), k);
+                    
                 } else if (name.startsWith('s-')) {
                     const dir = name.slice(2);
                     if (dir === 'ref') state.$refs[value] = el;
@@ -260,12 +240,7 @@ const spiki = (() => {
         walk(root, state, rootK);
         if (state.init) state.init();
 
-        return { 
-            unmount: () => {
-                rootK.forEach(stop => stop());
-                root._m = 0; 
-            } 
-        };
+        return { unmount: () => { rootK.forEach(stop => stop()); root._m = 0; } };
     };
 
     return { data: (n, f) => registry[n] = f, start: () => document.querySelectorAll('[s-data]').forEach(mount) };
