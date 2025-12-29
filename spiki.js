@@ -24,12 +24,12 @@ const spiki = (() => {
         let dep = deps.get(k);
         if (!dep) deps.set(k, (dep = new Set()));
         dep.add(activeEffect);
-        activeEffect.d.add(dep); // .d = deps
+        activeEffect.d.add(dep);
     };
 
     const trigger = (t, k) => {
         const dep = targetMap.get(t)?.get(k);
-        if (dep) [...dep].forEach(e => e.x ? e.x(e) : e()); // .x = scheduler
+        if (dep) [...dep].forEach(e => e.x ? e.x(e) : e());
     };
 
     const cleanup = e => (e.d.forEach(d => d.delete(e)), e.d.clear());
@@ -48,7 +48,7 @@ const spiki = (() => {
     };
 
     const reactive = (obj) => {
-        if (!obj || typeof obj !== 'object' || obj._p || obj instanceof Node) return obj; // ._p = isProxy
+        if (!obj || typeof obj !== 'object' || obj._p || obj instanceof Node) return obj;
         if (proxyMap.has(obj)) return proxyMap.get(obj);
 
         const proxy = new Proxy(obj, {
@@ -87,6 +87,16 @@ const spiki = (() => {
             else if (el.type === 'radio' && el.name) el.checked = el.value == v;
             else el.value = v ?? '';
         },
+        class: (el, v, old) => {
+            if (old && typeof old === 'string') {
+                old.split(/\s+/).forEach(c => c && el.classList.remove(c));
+            }
+            if (v && typeof v === 'string') {
+                v.split(/\s+/).forEach(c => c && el.classList.add(c));
+                return v;
+            }
+            return '';
+        },
         attr: (el, v, arg) => {
             if (v === false || v === null || v === undefined) el.removeAttribute(arg);
             else el.setAttribute(arg, v === true ? '' : v);
@@ -104,15 +114,15 @@ const spiki = (() => {
         const state = reactive(fac());
         state.$refs = {}; 
         
-        const rootK = []; // .k = cleanups
+        const rootK = [];
 
         const handleEvent = (e) => {
             let t = e.target;
             while (t && t !== root.parentNode) {
                 const meta = metaMap.get(t);
-                const hn = meta?.[e.type]; // hn = handlerName
+                const hn = meta?.[e.type];
                 if (hn) {
-                    const s = t._s || state; // ._s = scope
+                    const s = t._s || state;
                     const fn = getValue(s, hn);
                     if (typeof fn === 'function') fn.call(s, e);
                 }
@@ -222,7 +232,16 @@ const spiki = (() => {
                         root._e.add(evt);
                     }
                 } else if (name.startsWith(':')) {
-                    regFx(() => ops.attr(el, getValue(scope, value), name.slice(1)), k);
+                    const arg = name.slice(1);
+                    if (arg === 'class') {
+                        let prev = '';
+                        regFx(() => {
+                            const current = getValue(scope, value);
+                            prev = ops.class(el, current, prev);
+                        }, k);
+                    } else {
+                        regFx(() => ops.attr(el, getValue(scope, value), arg), k);
+                    }
                 } else if (name.startsWith('s-')) {
                     const dir = name.slice(2);
                     if (dir === 'ref') state.$refs[value] = el;
@@ -244,7 +263,7 @@ const spiki = (() => {
         return { 
             unmount: () => {
                 rootK.forEach(stop => stop());
-                root._m = 0; // Reset mounted flag
+                root._m = 0; 
             } 
         };
     };
