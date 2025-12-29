@@ -72,7 +72,7 @@ spiki.start();
 | `s-data="name"` | Mounts a component defined in `spiki.data`. |
 | `s-text="key"` | Updates `textContent` based on data. |
 | `s-html="key"` | Updates `innerHTML` (use carefully). |
-| `s-static` | Skips compilation for this element and its children (performance). |
+| `s-ignore` | Skips compilation for this element and its children (performance). |
 
 ### Bindings
 | Directive | Description |
