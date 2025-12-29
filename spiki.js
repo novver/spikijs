@@ -124,7 +124,7 @@ const spiki = (() => {
 
         const walk = (el, scope, k) => {
             if (el.nodeType !== 1) return; 
-            if (el.hasAttribute('s-static')) return;
+            if (el.hasAttribute('s-ignore')) return;
             if (el !== root && el.hasAttribute('s-data')) return;
 
             let val;
@@ -216,10 +216,10 @@ const spiki = (() => {
                     if (!meta) metaMap.set(el, (meta = {}));
                     meta[evt] = value;
 
-                    if (!root._evts) root._evts = new Set();
-                    if (!root._evts.has(evt)) {
+                    if (!root._e) root._e = new Set();
+                    if (!root._e.has(evt)) {
                         root.addEventListener(evt, handleEvent);
-                        root._evts.add(evt);
+                        root._e.add(evt);
                     }
                 } else if (name.startsWith(':')) {
                     regFx(() => ops.attr(el, getValue(scope, value), name.slice(1)), k);
