@@ -1,7 +1,7 @@
 const spiki = (() => {
     const registry = Object.create(null),
           [metaMap, targetMap, proxyMap] = [new WeakMap(), new WeakMap(), new WeakMap()],
-          loopRE = /^\s*(\w+)\s+in\s+(\S+)\s*$/,
+          loopRE = /^\s*(.*?)\s+in\s+(.+)\s*$/,
           queue = new Set();
           
     let activeEffect, isFlushing, p = Promise.resolve();
@@ -104,7 +104,7 @@ const spiki = (() => {
         const state = reactive(fac());
         state.$refs = {}; 
         
-        const rootK = []; // Cleanup hooks for root
+        const rootK = [];
 
         const handleEvent = (e) => {
             let t = e.target;
@@ -154,7 +154,10 @@ const spiki = (() => {
             if (el.tagName === 'TEMPLATE' && (val = el.getAttribute('s-for'))) {
                 const match = val.match(loopRE);
                 if (!match) return;
-                const [, alias, listKey] = match;
+
+                const lhs = match[1].replace(/[()]/g, '');
+                const listKey = match[2];
+                const [alias, indexAlias] = lhs.split(',').map(s => s.trim());
                 
                 const anchor = document.createTextNode('');
                 el.replaceWith(anchor);
@@ -175,8 +178,7 @@ const spiki = (() => {
                                 const clone = el.content.cloneNode(true);
                                 const itemScope = Object.create(scope);
                                 itemScope[alias] = item;
-                                itemScope.$index = i;
-                                itemScope.$parent = scope;
+                                if (indexAlias) itemScope[indexAlias] = i;
                                 
                                 const nodes = Array.from(clone.childNodes);
                                 const rowK = [];
@@ -184,8 +186,8 @@ const spiki = (() => {
                                 for(let n = 0; n < nodes.length; n++) walk(nodes[n], itemScope, rowK);
                                 row = { n: nodes, s: itemScope, k: rowK };
                             } else {
-                                row.s.$index = i;
                                 row.s[alias] = item;
+                                if (indexAlias) row.s[indexAlias] = i;
                             }
 
                             if (row.n[0] !== cursor.nextSibling) {
