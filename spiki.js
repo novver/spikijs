@@ -167,12 +167,14 @@ const spiki = (() => {
                     const items = getValue(scope, listKey);
                     const nextPool = new Map();
                     let cursor = anchor;
+                    
+                    const isArr = Array.isArray(items);
+                    const list = isArr ? items : (items ? Object.keys(items) : []);
 
-                    const entries = Array.isArray(items) ? items.map((v, i) => [i, v]) : 
-                                    (typeof items === 'object' && items) ? Object.entries(items) : [];
+                    for (let i = 0; i < list.length; i++) {
+                        const key = isArr ? i : list[i];
+                        const item = isArr ? list[i] : items[key];
 
-                    for (let i = 0; i < entries.length; i++) {
-                        const [key, item] = entries[i];
                         const rowKey = (typeof item === 'object' && item !== null) ? item : key + '_' + item;
                         let row = pool.get(rowKey);
 
@@ -180,7 +182,7 @@ const spiki = (() => {
                             const clone = el.content.cloneNode(true);
                             const itemScope = Object.create(scope);
                             itemScope[alias] = item;
-                            if (indexAlias) itemScope[indexAlias] = key;
+                            if (indexAlias) itemScope[indexAlias] = key; 
                             
                             const nodes = Array.from(clone.childNodes);
                             const rowK = [];
