@@ -85,7 +85,7 @@ spiki.start();
 | Directive | Description |
 | :--- | :--- |
 | `s-if="condition"` | Conditionally renders the element. If false, the element is removed from the DOM. |
-| `s-for="item in list"`<br>`s-for="(item, index) in list"` | Loops over arrays. Must be used on a `<template>` tag. in function you can access `this.item`, `this.index` |
+| `s-for="item in list"`<br>`s-for="(item, index) in list"` | Loops over arrays. Must be used on a `<template>` tag. <br>In function you can access `this.item`, `this.index` |
 
 ### Events
 | Directive | Description |
