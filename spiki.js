@@ -164,42 +164,43 @@ const spiki = (() => {
                 let pool = new Map();
 
                 regFx(() => {
-                    const list = getValue(scope, listKey) || [];
+                    const items = getValue(scope, listKey);
                     const nextPool = new Map();
                     let cursor = anchor;
 
-                    if (Array.isArray(list)) { 
-                        for (let i = 0; i < list.length; i++) {
-                            const item = list[i];
-                            const key = (typeof item === 'object' && item !== null) ? item : i + '_' + item;
-                            let row = pool.get(key);
+                    const entries = Array.isArray(items) ? items.map((v, i) => [i, v]) : 
+                                    (typeof items === 'object' && items) ? Object.entries(items) : [];
 
-                            if (!row) {
-                                const clone = el.content.cloneNode(true);
-                                const itemScope = Object.create(scope);
-                                itemScope[alias] = item;
-                                if (indexAlias) itemScope[indexAlias] = i;
-                                
-                                const nodes = Array.from(clone.childNodes);
-                                const rowK = [];
-                                
-                                for(let n = 0; n < nodes.length; n++) walk(nodes[n], itemScope, rowK);
-                                row = { n: nodes, s: itemScope, k: rowK };
-                            } else {
-                                row.s[alias] = item;
-                                if (indexAlias) row.s[indexAlias] = i;
-                            }
+                    for (let i = 0; i < entries.length; i++) {
+                        const [key, item] = entries[i];
+                        const rowKey = (typeof item === 'object' && item !== null) ? item : key + '_' + item;
+                        let row = pool.get(rowKey);
 
-                            if (row.n[0] !== cursor.nextSibling) {
-                                const frag = document.createDocumentFragment();
-                                row.n.forEach(n => frag.appendChild(n));
-                                cursor.parentNode.insertBefore(frag, cursor.nextSibling);
-                            }
+                        if (!row) {
+                            const clone = el.content.cloneNode(true);
+                            const itemScope = Object.create(scope);
+                            itemScope[alias] = item;
+                            if (indexAlias) itemScope[indexAlias] = key;
                             
-                            cursor = row.n[row.n.length - 1];
-                            nextPool.set(key, row);
-                            pool.delete(key);
+                            const nodes = Array.from(clone.childNodes);
+                            const rowK = [];
+                            
+                            for(let n = 0; n < nodes.length; n++) walk(nodes[n], itemScope, rowK);
+                            row = { n: nodes, s: itemScope, k: rowK };
+                        } else {
+                            row.s[alias] = item;
+                            if (indexAlias) row.s[indexAlias] = key;
                         }
+
+                        if (row.n[0] !== cursor.nextSibling) {
+                            const frag = document.createDocumentFragment();
+                            row.n.forEach(n => frag.appendChild(n));
+                            cursor.parentNode.insertBefore(frag, cursor.nextSibling);
+                        }
+                        
+                        cursor = row.n[row.n.length - 1];
+                        nextPool.set(rowKey, row);
+                        pool.delete(rowKey);
                     }
                     
                     pool.forEach(row => {
