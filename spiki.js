@@ -1,9 +1,9 @@
 const spiki = (() => {
     const registry = Object.create(null),
-          [metaMap, targetMap, proxyMap] = [new WeakMap(), new WeakMap(), new WeakMap()],
-          loopRE = /^\s*(.*?)\s+in\s+(.+)\s*$/,
-          queue = new Set();
-          
+        [metaMap, targetMap, proxyMap] = [new WeakMap(), new WeakMap(), new WeakMap()],
+        loopRE = /^\s*(.*?)\s+in\s+(.+)\s*$/,
+        queue = new Set();
+
     let activeEffect, isFlushing, p = Promise.resolve();
 
     // 1. Helper
@@ -19,9 +19,9 @@ const spiki = (() => {
         }
         return (exec && typeof v === 'function') ? v.call(root) : v;
     };
-    
+
     // 2. Scheduler
-    const nextTick = fn => !queue.has(fn) && queue.add(fn) && !isFlushing && (isFlushing = true) && 
+    const nextTick = fn => !queue.has(fn) && queue.add(fn) && !isFlushing && (isFlushing = true) &&
         p.then(() => (queue.forEach(j => j()), queue.clear(), isFlushing = false));
 
     // 3. Reactivity Engine
@@ -83,19 +83,20 @@ const spiki = (() => {
                     if (c) c[0] === '!' ? el.classList.remove(c.slice(1)) : el.classList.add(c);
                 });
             }
-        }
+        },
+        init: () => { }
     };
 
     // 5. Core Engine
     const mount = (root) => {
-        if (root._m) return; 
+        if (root._m) return;
         root._m = 1;
 
         const fac = registry[root.getAttribute('s-data')];
         if (!fac) return;
 
         const state = reactive(fac());
-        state.$refs = {}; 
+        state.$refs = {};
         const rootK = [];
         const regFx = (fn, kList) => kList.push(effect(fn, nextTick));
 
@@ -135,7 +136,7 @@ const spiki = (() => {
                 }, k);
                 return;
             }
-            
+
             if (el.tagName === 'TEMPLATE' && (val = el.getAttribute('s-for'))) {
                 const match = val.match(loopRE);
                 if (!match) return;
@@ -160,7 +161,7 @@ const spiki = (() => {
                             const clone = el.content.cloneNode(true);
                             const s = Object.create(scope);
                             s[alias] = item;
-                            if (indexAlias) s[indexAlias] = key; 
+                            if (indexAlias) s[indexAlias] = key;
                             const n = Array.from(clone.childNodes);
                             const rowK = [];
                             n.forEach(c => walk(c, s, rowK));
@@ -179,7 +180,7 @@ const spiki = (() => {
                         nextPool.set(rowKey, row);
                         pool.delete(rowKey);
                     });
-                    
+
                     pool.forEach(row => (row.k.forEach(s => s()), row.n.forEach(n => n.remove())));
                     pool = nextPool;
                 }, k);
@@ -189,11 +190,11 @@ const spiki = (() => {
             const attrs = el.attributes;
             for (let i = attrs.length - 1; i >= 0; i--) {
                 const { name, value } = attrs[i];
-                
+
                 if (name[0] === ':') {
                     const type = name.slice(1);
                     regFx(() => ops[type === 'class' ? 'class' : 'attr'](el, getValue(scope, value), type), k);
-                } 
+                }
                 else if (name[0] === 's' && name[1] === '-') {
                     const key = name.slice(2);
                     if (key === 'ref') state.$refs[value] = el;
