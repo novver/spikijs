@@ -163,19 +163,6 @@ const spiki = (() => {
                 } else if (name[0] === 's' && name[1] === '-') {
                     const key = name.slice(2);
                     if (key === 'ref') state.$refs[value] = el;
-                    
-                    else if (key === 'model') { 
-                        regFx(() => ops.value(el, getValue(scope, value, el)), kList);
-                        const tag = el.tagName;
-                        if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') {
-                            const isCheck = el.type === 'checkbox' || el.type === 'radio';
-                            el.addEventListener((isCheck || tag === 'SELECT') ? 'change' : 'input', () => {
-                                let v = el.type === 'checkbox' ? el.checked : el.value, t = scope, path = value.split('.');
-                                if (path.length > 1) { for(let j=0; j<path.length-1; j++) t = t[path[j]]; t[path[path.length-1]] = v; }
-                                else scope[value] = v;
-                            });
-                        }
-                    } 
                     else if (ops[key]) regFx(() => ops[key](el, getValue(scope, value, el)), kList);
                     else { 
                         el._s = scope;
