@@ -8,7 +8,7 @@
 *   **⚡ Fine-Grained Reactivity:** Powered by `Proxy`. Supports deep object nesting and Array mutations (`push`, `splice`, `reverse`) out of the box.
 *   **🚀 High Performance:**
     *   **Event Delegation:** Attaches only **one** event listener per event type to the root element, regardless of how many list items you have.
-    *   **Optimized List Rendering:** Smart diffing algorithm for `s-for` that reuses DOM nodes and minimizes reflows.
+    *   **Optimized List Rendering:** Smart diffing algorithm for `_for` that reuses DOM nodes and minimizes reflows.
     *   **Memory Efficient:** Uses `WeakMap` for dependency tracking to prevent memory leaks.
 *   **🔍 ~2KB (Gzipped):** Tiny footprint, no build step required.
 
@@ -27,16 +27,16 @@ import spiki from './spiki.min.js'; // or spiki.js
 ## 🏁 Quick Start
 
 ### 1. Bind to HTML
-Use `s-data` to mount the component and directives to bind data.
+Use `_data` to mount the component and directives to bind data.
 
 ```html
-<div s-data="counter">
-    <h1 s-text="title"></h1>
-    <h2 s-text="count"></h2>
+<div _data="counter">
+    <h1 _text="title"></h1>
+    <h2 _text="count"></h2>
     
     <!-- Events map directly to function names in your data -->
-    <button @click="decrement">-</button>
-    <button @click="increment">+</button>
+    <button _click="decrement">-</button>
+    <button _click="increment">+</button>
 </div>
 ```
 
@@ -69,45 +69,45 @@ spiki.start();
 ### State & display
 | Directive | Description |
 | :--- | :--- |
-| `s-data="name"` | Mounts a component defined in `spiki.data`. |
-| `s-text="key"` | Updates `textContent` based on data. |
-| `s-html="key"` | Updates `innerHTML` (use carefully). |
-| `s-ignore` | Skips compilation for this element and its children (performance). |
+| `_data="name"` | Mounts a component defined in `spiki.data`. |
+| `_text="key"` | Updates `textContent` based on data. |
+| `_html="key"` | Updates `innerHTML` (use carefully). |
+| `_ignore` | Skips compilation for this element and its children (performance). |
 
 ### Bindings
 | Directive | Description |
 | :--- | :--- |
-| `s-value="key"` | **One-way binding** from State to Input (`value`, `checked`). Ideal for controlled inputs. |
+| `_value="key"` | **One-way binding** from State to Input (`value`, `checked`). Ideal for controlled inputs. |
 | `:attr="key"` | Dynamic attribute binding. <br>Example: `:class="myClass"`, `:href="item.url"`, `:disabled="isBusy"`. |
-| `s-ref="name"` | Stores the DOM element in `this.$refs.name`. |
+| `_ref="name"` | Stores the DOM element in `this.$refs.name`. |
 
 ### Flow Control
 | Directive | Description |
 | :--- | :--- |
-| `s-if="condition"` | Conditionally renders the element. If false, the element is removed from the DOM. |
-| `s-for="item in list"`<br>`s-for="(item, index) in list"` | Loops over arrays. Must be used on a `<template>` tag. <br>In function you can access `this.item`, `this.index` |
+| `_if="condition"` | Conditionally renders the element. If false, the element is removed from the DOM. |
+| `_for="item in list"`<br>`_for="(item, index) in list"` | Loops over arrays. Must be used on a `<template>` tag. <br>In function you can access `this.item`, `this.index` |
 
 ### Events
 | Directive | Description |
 | :--- | :--- |
-| `@event="method"` | Listens for events (`click`, `input`, `submit`, etc.). calls the method in your scope. <br>Example: `@click="method"`, `@submit="method"`. |
+| `_event="method"` | Listens for events (`click`, `input`, `submit`, etc.). calls the method in your scope. <br>Example: `_click="method"`, `_submit="method"`. |
 
 ---
 
 ## 💡 Examples
 
 ### 1. Two-Way Binding Logic (Manual)
-Since `s-value` is strict one-way binding (Data -> UI), you handle UI updates via events. This gives you full control.
+Since `_value` is strict one-way binding (Data -> UI), you handle UI updates via events. This gives you full control.
 
 ```html
-<div s-data="form-app">
+<div _data="form-app">
     <!-- 1. State controls the input value -->
     <!-- 2. Input event updates the state -->
-    <input s-value="message" @input="sync">
+    <input _value="message" _input="sync">
     
-    <p>Live preview: <span s-text="message"></span></p>
+    <p>Live preview: <span _text="message"></span></p>
     
-    <button @click="reset">Reset</button>
+    <button _click="reset">Reset</button>
 </div>
 
 <script type="module">
@@ -129,20 +129,20 @@ Since `s-value` is strict one-way binding (Data -> UI), you handle UI updates vi
 </script>
 ```
 
-### 2. Arrays & Loops (`s-for`)
+### 2. Arrays & Loops (`_for`)
 spiki's reactivity system detects Array mutations like `push`.
 
 ```html
-<div s-data="todo-app">
-    <input s-value="newTodo" @input="syncInput" @keydown="checkEnter">
-    <button @click="add">Add Task</button>
+<div _data="todo-app">
+    <input _value="newTodo" _input="syncInput" _keydown="checkEnter">
+    <button _click="add">Add Task</button>
 
     <ul>
-        <template s-for="task in tasks">
+        <template _for="task in tasks">
             <li>
-                <span s-text="task"></span>
+                <span _text="task"></span>
                 <!-- Pass the task (object identity) to remove -->
-                <button @click="remove">x</button>
+                <button _click="remove">x</button>
             </li>
         </template>
     </ul>
@@ -169,9 +169,9 @@ spiki's reactivity system detects Array mutations like `push`.
         },
 
         remove(e) {
-            // "this" inside an s-for loop inherits the parent scope
-            // plus the loop variable (e.g., "task") and "$index"
-            this.tasks.splice(this.$index, 1);
+            // "this" inside an _for loop inherits the parent scope
+            // plus the loop variable (e.g., "task") and "index"
+            this.tasks.splice(this.index, 1);
         }
     }));
 
@@ -183,9 +183,9 @@ spiki's reactivity system detects Array mutations like `push`.
 `init()` is a special method that runs when the component mounts.
 
 ```html
-<div s-data="timer">
-    <span s-text="time"></span>
-    <button s-ref="btn" @click="stop">Stop</button>
+<div _data="timer">
+    <span _text="time"></span>
+    <button _ref="btn" _click="stop">Stop</button>
 </div>
 
 <script type="module">
@@ -213,18 +213,18 @@ spiki's reactivity system detects Array mutations like `push`.
 ```
 
 ### 3. Fetch & Condition
-Put `s-if` outside the `<template>`
+Put `_if` outside the `<template>`
 
 ```html
-<div s-data="movie-search">
-     <input type="text" s-ref="name" value="black">
-     <button @click="search">search</button>
-     <ul s-if="isFound">
-         <template s-for="movie in movies">
+<div _data="movie-search">
+     <input type="text" _ref="name" value="black">
+     <button _click="search">search</button>
+     <ul _if="isFound">
+         <template _for="(movie, index) in movies">
              <li>
-                 <span s-text="number"></span>
-                 <b s-text="movie.Title"></b>
-                 (<span s-text="movie.Year"></span>)
+                 <span _text="number"></span>
+                 <b _text="movie.Title"></b>
+                 (<span _text="movie.Year"></span>)
              </li>
          </template>
      </ul>
@@ -238,7 +238,7 @@ Put `s-if` outside the `<template>`
       isFound: false,
     
       get number(){
-          return this.$index + 1 + ". ";
+          return this.index + 1 + ". ";
       },
     
       async search() {
@@ -262,7 +262,7 @@ Put `s-if` outside the `<template>`
 
 For those interested in the code:
 
-1.  **Scope Inheritance**: Inside `s-for`, spiki creates a specialized Proxy that reads from the loop item first, then falls back to the parent scope. Writes to non-local keys bubble up to the parent automatically.
+1.  **Scope Inheritance**: Inside `_for`, spiki creates a specialized Proxy that reads from the loop item first, then falls back to the parent scope. Writes to non-local keys bubble up to the parent automatically.
 2.  **Scheduler**: DOM updates are batched asynchronously using `Promise.resolve().then(...)` (Microtasks), ensuring multiple state changes trigger only one render cycle.
 3.  **WeakMap Caching**: The reactivity system caches Proxies. If you access `this.items` multiple times, you get the exact same Proxy reference, ensuring stability in equality checks (`===`).
 
