@@ -81,7 +81,7 @@ These directives automatically execute the referenced function (if it is one) an
 | :--- | :--- | :--- |
 | `s-text="prop"` | Updates the element's `textContent`. | `(el)` |
 | `s-html="prop"` | Updates the element's `innerHTML`. **⚠️ Use with caution (XSS).** | `(el)` |
-| `s-value="prop"` | Two-way binding for inputs. Handles `value` for text inputs and `checked` for checkbox/radio. | `(el)` |
+| `s-model="prop"` | Two-way binding for inputs. Handles `value` for text inputs and `checked` for checkbox/radio. | `(el)` |
 | `s-ref="name"` | Registers the element into the `$refs` object of the component (e.g., `this.$refs.name`). | - |
 | `s-init="func"` | Lifecycle hook. Runs the function immediately when the element is mounted. Useful for API calls or DOM setup. | `(el)` |
 
@@ -107,13 +107,12 @@ Any `s-` attribute that is **not** one of the directives above is treated as an 
 ## 💡 Examples
 
 ### 1. Two-Way Binding Logic (Manual)
-Since `s-value` is strict one-way binding (Data -> UI), you handle UI updates via events. This gives you full control.
+Since `s-model` is strict one-way binding (Data -> UI), you handle UI updates via events. This gives you full control.
 
 ```html
 <div s-data="form-app">
-    <!-- 1. State controls the input value -->
-    <!-- 2. Input event updates the state -->
-    <input s-value="message" s-input="sync">
+    
+    <input s-model="message" s-input="sync">
     
     <p>Live preview: <span s-text="message"></span></p>
     
@@ -144,7 +143,7 @@ spiki's reactivity system detects Array mutations like `push`.
 
 ```html
 <div s-data="todo-app">
-    <input s-value="newTodo" s-input="syncInput" s-keydown="checkEnter">
+    <input s-model="newTodo" s-input="syncInput" s-keydown="checkEnter">
     <button s-click="add">Add Task</button>
 
     <ul>
