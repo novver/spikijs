@@ -113,10 +113,14 @@ const spiki = (() => {
         };
 
         const walk = (el, scope, k) => {
-            if (el.nodeType !== 1 || el.hasAttribute('s-ignore') || (el !== root && el.hasAttribute('s-data'))) return;
+            if (el.nodeType !== 1 || el.hasAttribute('s-ignore')) return;
+            
+            if (el !== root && el.hasAttribute('s-data')) {
+                mount(el);
+                return;
+            }
 
             let val;
-            // s-if
             if (val = el.getAttribute('s-if')) {
                 const anchor = document.createTextNode('');
                 el.replaceWith(anchor);
@@ -137,7 +141,6 @@ const spiki = (() => {
                 return;
             }
 
-            // s-for
             if (el.tagName === 'TEMPLATE' && (val = el.getAttribute('s-for'))) {
                 const match = val.match(loopRE);
                 if (!match) return;
@@ -188,7 +191,6 @@ const spiki = (() => {
                 return;
             }
 
-            // Attributes Loop
             const attrs = el.attributes;
             for (let i = attrs.length - 1; i >= 0; i--) {
                 const { name, value } = attrs[i];
