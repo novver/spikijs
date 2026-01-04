@@ -6,7 +6,7 @@ const spiki = (() => {
           
     let activeEffect, isFlushing, p = Promise.resolve();
 
-    // -- 1. Helper --
+    // 1. Helper
     const getValue = (root, path, exec = true) => {
         let v = root;
         if (path.includes('.')) {
@@ -20,10 +20,11 @@ const spiki = (() => {
         return (exec && typeof v === 'function') ? v.call(root) : v;
     };
     
+    // 2. Scheduler
     const nextTick = fn => !queue.has(fn) && queue.add(fn) && !isFlushing && (isFlushing = true) && 
         p.then(() => (queue.forEach(j => j()), queue.clear(), isFlushing = false));
 
-    // -- 2. Reactivity --
+    // 3. Reactivity Engine
     const track = (t, k) => {
         if (!activeEffect) return;
         let deps = targetMap.get(t) || targetMap.set(t, new Map()).get(t);
@@ -70,18 +71,22 @@ const spiki = (() => {
         })).get(obj);
     };
 
-    // -- 3. DOM Ops (One-liners) --
+    // 4. DOM Ops
     const ops = {
         text: (el, v) => el.textContent = v ?? '',
         html: (el, v) => el.innerHTML = v ?? '',
-        class: (el, v) => el.className = (el._oc ??= el.className) + (v ? ' ' + v : ''),
-        value: (el, v) => el.type === 'checkbox' ? el.checked = !!v : 
-                         (el.type === 'radio' && el.name) ? el.checked = el.value == v : 
-                         el.value = v ?? '',
-        attr: (el, v, arg) => (v == null || v === false) ? el.removeAttribute(arg) : el.setAttribute(arg, v === true ? '' : v)
+        value: (el, v) => el.type === 'checkbox' ? el.checked = !!v : (el.type === 'radio' && el.name) ? el.checked = el.value == v : el.value = v ?? '',
+        attr: (el, v, arg) => (v == null || v === false) ? el.removeAttribute(arg) : el.setAttribute(arg, v === true ? '' : v),
+        class: (el, v) => {
+            if (typeof v === 'string') {
+                v.split(/\s+/).forEach(c => {
+                    if (c) c[0] === '!' ? el.classList.remove(c.slice(1)) : el.classList.add(c);
+                });
+            }
+        }
     };
 
-    // -- 4. Engine --
+    // 5. Core Engine
     const mount = (root) => {
         if (root._m) return; 
         root._m = 1;
@@ -110,7 +115,7 @@ const spiki = (() => {
             if (el.nodeType !== 1 || el.hasAttribute('s-ignore') || (el !== root && el.hasAttribute('s-data'))) return;
 
             let val;
-            // s-if
+
             if (val = el.getAttribute('s-if')) {
                 const anchor = document.createTextNode('');
                 el.replaceWith(anchor);
@@ -124,21 +129,18 @@ const spiki = (() => {
                             anchor.parentNode.insertBefore(node, anchor);
                         }
                     } else if (node) {
-                        branchK.forEach(s => s()); branchK.length = 0; // Optimasi clear array
+                        branchK.forEach(s => s()); branchK.length = 0;
                         node.remove(); node = null;
                     }
                 }, k);
                 return;
             }
-
-            // s-for
+            
             if (el.tagName === 'TEMPLATE' && (val = el.getAttribute('s-for'))) {
                 const match = val.match(loopRE);
                 if (!match) return;
-
                 const [lhs, listKey] = [match[1].replace(/[()]/g, ''), match[2]];
                 const [alias, indexAlias] = lhs.split(',').map(s => s.trim());
-                
                 const anchor = document.createTextNode('');
                 el.replaceWith(anchor);
                 let pool = new Map();
@@ -147,7 +149,6 @@ const spiki = (() => {
                     const items = getValue(scope, listKey);
                     const nextPool = new Map();
                     let cursor = anchor;
-                    
                     const list = Array.isArray(items) ? items : (items ? Object.keys(items) : []);
 
                     list.forEach((itemRaw, i) => {
@@ -160,7 +161,6 @@ const spiki = (() => {
                             const s = Object.create(scope);
                             s[alias] = item;
                             if (indexAlias) s[indexAlias] = key; 
-                            
                             const n = Array.from(clone.childNodes);
                             const rowK = [];
                             n.forEach(c => walk(c, s, rowK));
@@ -186,11 +186,15 @@ const spiki = (() => {
                 return;
             }
 
-            // Attributes loop
-            Array.from(el.attributes).forEach(({ name, value }) => {
-                if (name.startsWith(':')) {
-                    regFx(() => ops[name.slice(1) === 'class' ? 'class' : 'attr'](el, getValue(scope, value), name.slice(1)), k);
-                } else if (name.startsWith('s-')) {
+            const attrs = el.attributes;
+            for (let i = attrs.length - 1; i >= 0; i--) {
+                const { name, value } = attrs[i];
+                
+                if (name[0] === ':') {
+                    const type = name.slice(1);
+                    regFx(() => ops[type === 'class' ? 'class' : 'attr'](el, getValue(scope, value), type), k);
+                } 
+                else if (name[0] === 's' && name[1] === '-') {
                     const key = name.slice(2);
                     if (key === 'ref') state.$refs[value] = el;
                     else if (ops[key]) regFx(() => ops[key](el, getValue(scope, value)), k);
@@ -203,9 +207,8 @@ const spiki = (() => {
                         }
                     }
                 }
-            });
+            }
 
-            // Child Traversal
             let child = el.firstElementChild;
             while (child) {
                 walk(child, scope, k);
