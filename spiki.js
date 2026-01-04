@@ -6,7 +6,6 @@ const spiki = (() => {
           
     let activeEffect, isFlushing, p = Promise.resolve();
 
-    // -- Helpers --
     const getValue = (s, path) => {
         if (!path.includes('.')) return s[path];
         const parts = path.split('.');
@@ -17,11 +16,9 @@ const spiki = (() => {
         return s;
     };
     
-    // -- Scheduler --
     const nextTick = fn => !queue.has(fn) && queue.add(fn) && !isFlushing && (isFlushing = true) && 
         p.then(() => (queue.forEach(j => j()), queue.clear(), isFlushing = false));
 
-    // -- Reactivity --
     const track = (t, k) => {
         if (!activeEffect) return;
         let deps = targetMap.get(t);
@@ -77,7 +74,6 @@ const spiki = (() => {
         return proxy;
     };
 
-    // -- DOM Ops --
     const ops = {
         text: (el, v) => el.textContent = v ?? '',
         html: (el, v) => el.innerHTML = v ?? '',
@@ -93,12 +89,11 @@ const spiki = (() => {
         }
     };
 
-    // -- Engine --
     const mount = (root) => {
         if (root._m) return; 
         root._m = 1;
 
-        const fac = registry[root.getAttribute('s-data')];
+        const fac = registry[root.getAttribute('_data')];
         if (!fac) return;
 
         const state = reactive(fac());
@@ -122,13 +117,13 @@ const spiki = (() => {
         const regFx = (fn, kList) => kList.push(effect(fn, nextTick));
 
         const walk = (el, scope, k) => {
-            if (el.nodeType !== 1 || el.hasAttribute('s-ignore')) return;
-            if (el !== root && el.hasAttribute('s-data')) return;
+            if (el.nodeType !== 1 || el.hasAttribute('_ignore')) return;
+            if (el !== root && el.hasAttribute('_data')) return;
 
             let val;
 
-            // Handle s-if
-            if (val = el.getAttribute('s-if')) {
+            // Structural: _if
+            if (val = el.getAttribute('_if')) {
                 const anchor = document.createTextNode('');
                 el.replaceWith(anchor);
                 let node, branchK = [];
@@ -137,7 +132,7 @@ const spiki = (() => {
                     if (getValue(scope, val)) {
                         if (!node) {
                             node = el.cloneNode(true);
-                            node.removeAttribute('s-if');
+                            node.removeAttribute('_if');
                             walk(node, scope, branchK);
                             anchor.parentNode.insertBefore(node, anchor);
                         }
@@ -150,8 +145,8 @@ const spiki = (() => {
                 return;
             }
 
-            // Handle s-for
-            if (el.tagName === 'TEMPLATE' && (val = el.getAttribute('s-for'))) {
+            // Structural: _for
+            if (el.tagName === 'TEMPLATE' && (val = el.getAttribute('_for'))) {
                 const match = val.match(loopRE);
                 if (!match) return;
 
@@ -214,36 +209,39 @@ const spiki = (() => {
                 return;
             }
 
-            // Handle Attributes & Directives
+            // Attributes: Binding (:) and Combined Directives/Events (_)
             const attrs = el.attributes;
             for (let i = attrs.length - 1; i >= 0; i--) {
                 const { name, value } = attrs[i];
                 
-                if (name.startsWith('@')) {
-                    const evt = name.slice(1);
-                    el._s = scope;
-                    let meta = metaMap.get(el);
-                    if (!meta) metaMap.set(el, (meta = {}));
-                    meta[evt] = value;
-
-                    if (!root._e) (root._e = new Set());
-                    if (!root._e.has(evt)) {
-                        root.addEventListener(evt, handleEvent);
-                        root._e.add(evt);
-                    }
-                } else if (name.startsWith(':')) {
+                if (name.startsWith(':')) {
                     const arg = name.slice(1);
                     const handler = arg === 'class' ? ops.class : ops.attr;
                     regFx(() => handler(el, getValue(scope, value), arg), k);
 
-                } else if (name.startsWith('s-')) {
-                    const dir = name.slice(2);
-                    if (dir === 'ref') state.$refs[value] = el;
-                    else if (ops[dir]) regFx(() => ops[dir](el, getValue(scope, value)), k);
+                } else if (name.startsWith('_')) {
+                    const key = name.slice(1);
+
+                    if (key === 'ref') {
+                        state.$refs[value] = el;
+                    } else if (ops[key]) {
+                        regFx(() => ops[key](el, getValue(scope, value)), k);
+                    } else {
+                        // Fallback to Event
+                        el._s = scope;
+                        let meta = metaMap.get(el);
+                        if (!meta) metaMap.set(el, (meta = {}));
+                        meta[key] = value;
+
+                        if (!root._e) (root._e = new Set());
+                        if (!root._e.has(key)) {
+                            root.addEventListener(key, handleEvent);
+                            root._e.add(key);
+                        }
+                    }
                 }
             }
 
-            // Recursive Walk
             let child = el.firstElementChild;
             while (child) {
                 const next = child.nextElementSibling;
@@ -263,7 +261,10 @@ const spiki = (() => {
         };
     };
 
-    return { data: (n, f) => registry[n] = f, start: () => document.querySelectorAll('[s-data]').forEach(mount) };
+    return { 
+        data: (n, f) => registry[n] = f, 
+        start: () => document.querySelectorAll('[_data]').forEach(mount) 
+    };
 })();
 
 export default spiki;
