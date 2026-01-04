@@ -66,33 +66,33 @@ spiki.start();
 
 ## 📖 Directives Reference
 
-| Directive | Syntax | Description | Arguments Passed |
-| :--- | :--- | :--- | :--- |
-| **`s-data`** | `s-data="name"` | Defines a component scope. Takes the name registered via `spiki.data()`. | - |
-| **`s-ignore`** | `s-ignore` | Tells Spiki to skip this element and its children during compilation. Useful for integrating 3rd-party libs. | - |
-| **`s-if`** | `s-if="condition"` | Conditionally renders the element. If false, the element is removed from the DOM. | `(el)` |
-| **`s-for`** | `s-for="item in list"` | Loops through an array or object. Must be used on a `<template>` tag. Supports `(item, index) in list`. | - |
+| Syntax | Description | Arguments Passed |
+| :--- | :--- | :--- |
+| `s-data="name"` | Defines a component scope. Takes the name registered via `spiki.data()`. | - |
+| `s-ignore` | Tells Spiki to skip this element and its children during compilation. Useful for integrating 3rd-party libs. | - |
+| `s-if="condition"` | Conditionally renders the element. If false, the element is removed from the DOM. | `(el)` |
+| `s-for="item in list"` | Loops through an array or object. Must be used on a `<template>` tag. Supports `(item, index) in list`. | - |
 
 ### DOM & State Directives
 
 These directives automatically execute the referenced function (if it is one) and pass the current element (`el`) as an argument.
 
-| Directive | Syntax | Description | Arguments Passed |
-| :--- | :--- | :--- | :--- |
-| **`s-text`** | `s-text="prop"` | Updates the element's `textContent`. | `(el)` |
-| **`s-html`** | `s-html="prop"` | Updates the element's `innerHTML`. **⚠️ Use with caution (XSS).** | `(el)` |
-| **`s-value`** | `s-value="prop"` | Two-way binding for inputs. Handles `value` for text inputs and `checked` for checkbox/radio. | `(el)` |
-| **`s-ref`** | `s-ref="name"` | Registers the element into the `$refs` object of the component (e.g., `this.$refs.name`). | - |
-| **`s-init`** | `s-init="func"` | Lifecycle hook. Runs the function immediately when the element is mounted. Useful for API calls or DOM setup. | `(el)` |
+| Syntax | Description | Arguments Passed |
+| :--- | :--- | :--- |
+| `s-text="prop"` | Updates the element's `textContent`. | `(el)` |
+| `s-html="prop"` | Updates the element's `innerHTML`. **⚠️ Use with caution (XSS).** | `(el)` |
+| `s-value="prop"` | Two-way binding for inputs. Handles `value` for text inputs and `checked` for checkbox/radio. | `(el)` |
+| `s-ref="name"` | Registers the element into the `$refs` object of the component (e.g., `this.$refs.name`). | - |
+| `s-init="func"` | Lifecycle hook. Runs the function immediately when the element is mounted. Useful for API calls or DOM setup. | `(el)` |
 
 ### Attribute Bindings (`:`)
 
 Bindings allow you to make standard HTML attributes reactive.
 
-| Binding | Syntax | Description | Arguments Passed |
-| :--- | :--- | :--- | :--- |
-| **`:attr`** | `:id="uid"`<br>`:disabled="isBusy"` | Binds a generic attribute. If the value is `null`, `undefined`, or `false`, the attribute is removed. | `(el)` |
-| **`:class`** | `:class="prop"` | **Smart Class Logic:** Expects a string.<br>• Use `"class-name"` to **add**.<br>• Use `"!class-name"` (with `!`) to **remove**.<br><br>*Example:* `return isActive ? 'bg-red' : '!bg-red bg-blue'` | `(el)` |
+| Syntax | Description | Arguments Passed |
+| :--- | :--- | :--- |
+| `:id="uid"`<br>`:disabled="isBusy"` | Binds a generic attribute. If the value is `null`, `undefined`, or `false`, the attribute is removed. | `(el)` |
+| `:class="prop"` | **Smart Class Logic:** Expects a string.<br>• Use `"class-name"` to **add**.<br>• Use `"!class-name"` (with `!`) to **remove**.<br><br>*Example:* `return isActive ? 'bg-red' : '!bg-red bg-blue'` | `(el)` |
 
 ### Event Listeners (`s-event`)
 
