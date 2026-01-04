@@ -93,7 +93,7 @@ const spiki = (() => {
         if (root._m) return; 
         root._m = 1;
 
-        const fac = registry[root.getAttribute('_data')];
+        const fac = registry[root.getAttribute('s-data')];
         if (!fac) return;
 
         const state = reactive(fac());
@@ -117,13 +117,13 @@ const spiki = (() => {
         const regFx = (fn, kList) => kList.push(effect(fn, nextTick));
 
         const walk = (el, scope, k) => {
-            if (el.nodeType !== 1 || el.hasAttribute('_ignore')) return;
-            if (el !== root && el.hasAttribute('_data')) return;
+            if (el.nodeType !== 1 || el.hasAttribute('s-ignore')) return;
+            if (el !== root && el.hasAttribute('s-data')) return;
 
             let val;
 
-            // Structural: _if
-            if (val = el.getAttribute('_if')) {
+            // Structural: s-if
+            if (val = el.getAttribute('s-if')) {
                 const anchor = document.createTextNode('');
                 el.replaceWith(anchor);
                 let node, branchK = [];
@@ -132,7 +132,7 @@ const spiki = (() => {
                     if (getValue(scope, val)) {
                         if (!node) {
                             node = el.cloneNode(true);
-                            node.removeAttribute('_if');
+                            node.removeAttribute('s-if');
                             walk(node, scope, branchK);
                             anchor.parentNode.insertBefore(node, anchor);
                         }
@@ -145,8 +145,8 @@ const spiki = (() => {
                 return;
             }
 
-            // Structural: _for
-            if (el.tagName === 'TEMPLATE' && (val = el.getAttribute('_for'))) {
+            // Structural: s-for
+            if (el.tagName === 'TEMPLATE' && (val = el.getAttribute('s-for'))) {
                 const match = val.match(loopRE);
                 if (!match) return;
 
@@ -209,7 +209,7 @@ const spiki = (() => {
                 return;
             }
 
-            // Attributes: Binding (:) and Combined Directives/Events (_)
+            // Attributes: Binding (:) and Combined s- (Directive/Event)
             const attrs = el.attributes;
             for (let i = attrs.length - 1; i >= 0; i--) {
                 const { name, value } = attrs[i];
@@ -219,15 +219,15 @@ const spiki = (() => {
                     const handler = arg === 'class' ? ops.class : ops.attr;
                     regFx(() => handler(el, getValue(scope, value), arg), k);
 
-                } else if (name.startsWith('_')) {
-                    const key = name.slice(1);
+                } else if (name.startsWith('s-')) {
+                    const key = name.slice(2); // Remove 's-'
 
                     if (key === 'ref') {
                         state.$refs[value] = el;
                     } else if (ops[key]) {
                         regFx(() => ops[key](el, getValue(scope, value)), k);
                     } else {
-                        // Fallback to Event
+                        // Fallback to Event (s-click, s-input)
                         el._s = scope;
                         let meta = metaMap.get(el);
                         if (!meta) metaMap.set(el, (meta = {}));
@@ -263,7 +263,7 @@ const spiki = (() => {
 
     return { 
         data: (n, f) => registry[n] = f, 
-        start: () => document.querySelectorAll('[_data]').forEach(mount) 
+        start: () => document.querySelectorAll('[s-data]').forEach(mount) 
     };
 })();
 
