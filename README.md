@@ -66,31 +66,41 @@ spiki.start();
 
 ## 📖 Directives Reference
 
-### State & display
-| Directive | Description |
-| :--- | :--- |
-| `s-data="name"` | Mounts a component defined in `spiki.data`. |
-| `s-text="key"` | Updates `textContent` based on data. |
-| `s-html="key"` | Updates `innerHTML` (use carefully). |
-| `s-ignore` | Skips compilation for this element and its children (performance). |
+| Directive | Syntax | Description | Arguments Passed |
+| :--- | :--- | :--- | :--- |
+| **`s-data`** | `s-data="name"` | Defines a component scope. Takes the name registered via `spiki.data()`. | - |
+| **`s-ignore`** | `s-ignore` | Tells Spiki to skip this element and its children during compilation. Useful for integrating 3rd-party libs. | - |
+| **`s-if`** | `s-if="condition"` | Conditionally renders the element. If false, the element is removed from the DOM. | `(el)` |
+| **`s-for`** | `s-for="item in list"` | Loops through an array or object. Must be used on a `<template>` tag. Supports `(item, index) in list`. | - |
 
-### Bindings
-| Directive | Description |
-| :--- | :--- |
-| `s-value="key"` | **One-way binding** from State to Input (`value`, `checked`). Ideal for controlled inputs. |
-| `:attr="key"` | Dynamic attribute binding. <br>Example: `:class="myClass"`, `:href="item.url"`, `:disabled="isBusy"`. |
-| `s-ref="name"` | Stores the DOM element in `this.$refs.name`. |
+### DOM & State Directives
 
-### Flow Control
-| Directive | Description |
-| :--- | :--- |
-| `s-if="condition"` | Conditionally renders the element. If false, the element is removed from the DOM. |
-| `s-for="item in list"`<br>`s-for="(item, index) in list"` | Loops over arrays. Must be used on a `<template>` tag. <br>In function you can access `this.item`, `this.index` |
+These directives automatically execute the referenced function (if it is one) and pass the current element (`el`) as an argument.
 
-### Events
-| Directive | Description |
-| :--- | :--- |
-| `s-[event]="method"` | Listens for events (`click`, `input`, `submit`, etc.). calls the method in your scope. <br>Example: `s-click="method"`, `s-submit="method"`. |
+| Directive | Syntax | Description | Arguments Passed |
+| :--- | :--- | :--- | :--- |
+| **`s-text`** | `s-text="prop"` | Updates the element's `textContent`. | `(el)` |
+| **`s-html`** | `s-html="prop"` | Updates the element's `innerHTML`. **⚠️ Use with caution (XSS).** | `(el)` |
+| **`s-value`** | `s-value="prop"` | Two-way binding for inputs. Handles `value` for text inputs and `checked` for checkbox/radio. | `(el)` |
+| **`s-ref`** | `s-ref="name"` | Registers the element into the `$refs` object of the component (e.g., `this.$refs.name`). | - |
+| **`s-init`** | `s-init="func"` | Lifecycle hook. Runs the function immediately when the element is mounted. Useful for API calls or DOM setup. | `(el)` |
+
+### Attribute Bindings (`:`)
+
+Bindings allow you to make standard HTML attributes reactive.
+
+| Binding | Syntax | Description | Arguments Passed |
+| :--- | :--- | :--- | :--- |
+| **`:attr`** | `:id="uid"`<br>`:disabled="isBusy"` | Binds a generic attribute. If the value is `null`, `undefined`, or `false`, the attribute is removed. | `(el)` |
+| **`:class`** | `:class="prop"` | **Smart Class Logic:** Expects a string.<br>• Use `"class-name"` to **add**.<br>• Use `"!class-name"` (with `!`) to **remove**.<br><br>*Example:* `return isActive ? 'bg-red' : '!bg-red bg-blue'` | `(el)` |
+
+### Event Listeners (`s-event`)
+
+Any `s-` attribute that is **not** one of the directives above is treated as an event listener.
+
+| Syntax | Description | Arguments Passed |
+| :--- | :--- | :--- |
+| **`s-[event]`** | Attaches a native event listener (e.g., `s-click`, `s-input`, `s-submit`, `s-mouseenter`).<br>The handler function is **not** auto-executed; it waits for the event trigger. | `(e)`<br>Native Event Object |
 
 ---
 
