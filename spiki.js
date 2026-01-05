@@ -19,19 +19,33 @@ const spiki = (() => {
         }
     );
 
-    // 2. Helpers & Scheduler
-    const getValue = (root, path, arg, exec = true) => {
-        if (path.indexOf('.') === -1) {
-            const v = root[path];
-            return exec && typeof v === 'function' ? v.call(root, arg) : v;
-        }
+    // 2. Helpers
+    const createScope = (parent) => {
+        const proto = Object.create(parent);
+        return new Proxy(proto, {
+            set: (target, key, value, receiver) => {
+                if (target.hasOwnProperty(key)) return Reflect.set(target, key, value, receiver);
+                let cursor = target;
+                while (cursor && !Object.prototype.hasOwnProperty.call(cursor, key)) {
+                    cursor = Object.getPrototypeOf(cursor);
+                }
+                return Reflect.set(cursor || target, key, value);
+            }
+        });
+    };
+
+    const evaluate = (scope, path) => {
+        if (typeof path !== 'string') return { val: path, ctx: scope };
         let parts = pathCache.get(path);
-        if (!parts) {
-            pathCache.set(path, (parts = path.split('.')));
+        if (!parts) pathCache.set(path, (parts = path.split('.')));
+        
+        let val = scope, ctx = scope;
+        for (const part of parts) {
+            if (val == null) break; 
+            ctx = val;
+            val = val[part];
         }
-        let v = root;
-        for (const p of parts) if ((v = v?.[p]) === undefined) return;
-        return exec && typeof v === 'function' ? v.call(root, arg) : v;
+        return { val, ctx };
     };
 
     const nextTick = fn => !queue.has(fn) && queue.add(fn) && !isFlushing && (isFlushing = true) &&
@@ -108,18 +122,21 @@ const spiki = (() => {
             let t = e.target;
             if (t._m && (e.type === 'input' || e.type === 'change')) {
                 const path = t._m, v = t.type === 'checkbox' ? t.checked : t.value;
-                if (path.indexOf('.') > -1) {
-                    const parts = pathCache.get(path) ?? pathCache.set(path, path.split('.')).get(path);
-                    let target = t._s || state;
-                    for(let i=0; i<parts.length-1; i++) target = target[parts[i]];
-                    target[parts[parts.length-1]] = v;
-                } else (t._s || state)[path] = v;
+                const { ctx: parentObj } = evaluate(t._s || state, path);
+                
+                if (path.indexOf('.') === -1) {
+                    (t._s || state)[path] = v; 
+                } else if (parentObj) {
+                    const parts = path.split('.');
+                    parentObj[parts[parts.length - 1]] = v; 
+                }
             }
+
             let hn;
             while (t && t !== root.parentNode) {
                 if (hn = metaMap.get(t)?.[e.type]) {
-                    const fn = getValue(t._s || state, hn, null, false);
-                    if (typeof fn === 'function') fn.call(t._s || state, e);
+                    const { val: fn, ctx } = evaluate(t._s || state, hn);
+                    if (typeof fn === 'function') fn.call(ctx, e);
                 }
                 t = t.parentNode;
             }
@@ -143,7 +160,10 @@ const spiki = (() => {
                 kList.push(() => branchK.forEach(s => s()));
 
                 return kList.push(effect(() => {
-                    if (getValue(scope, val)) {
+                    const { val: res, ctx } = evaluate(scope, val);
+                    const truthy = typeof res === 'function' ? res.call(ctx) : res;
+
+                    if (truthy) {
                         if (!node) {
                             node = el.cloneNode(true);
                             node.removeAttribute('s-if');
@@ -159,6 +179,7 @@ const spiki = (() => {
                 if (!match) return;
                 const [lhs, listKey] = [match[1].replace(/[()]/g, ''), match[2]];
                 const [alias, idx] = lhs.split(',').map(s => s.trim());
+                const keyAttr = el.getAttribute('s-key');
                 const anchor = document.createTextNode('');
                 el.replaceWith(anchor);
                 let pool = new Map();
@@ -166,13 +187,21 @@ const spiki = (() => {
                 kList.push(() => pool.forEach(r => r.k.forEach(s => s())));
 
                 return kList.push(effect(() => {
-                    const items = getValue(scope, listKey), nextPool = new Map();
+                    const { val: rawItems } = evaluate(scope, listKey);
+                    const items = rawItems;
                     if (Array.isArray(items)) track(items, 'length');
 
                     let cursor = anchor;
-                    (Array.isArray(items) ? items : items ? Object.keys(items) : []).forEach((raw, i) => {
+                    const iterable = Array.isArray(items) ? items : items ? Object.keys(items) : [];
+                    const nextPool = new Map();
+
+                    iterable.forEach((raw, i) => {
                         const [key, item] = Array.isArray(items) ? [i, raw] : [raw, items[raw]];
-                        const rowKey = typeof item === 'object' && item ? item : key + '_' + item;
+                        
+                        let rowKey;
+                        if (keyAttr && item) rowKey = item[keyAttr];
+                        else rowKey = (typeof item === 'object' && item) ? item : key + '_' + item;
+
                         let row = pool.get(rowKey);
 
                         const defineAlias = (targetObj) => {
@@ -184,7 +213,9 @@ const spiki = (() => {
                         };
 
                         if (!row) {
-                            const clone = el.content.cloneNode(true), s = Object.create(scope), rowK = [];
+                            const clone = el.content.cloneNode(true);
+                            const s = createScope(scope);
+                            const rowK = [];
                             
                             defineAlias(s);
                             if (idx) s[idx] = key;
@@ -221,19 +252,28 @@ const spiki = (() => {
             for (let i = attrs.length - 1; i >= 0; i--) {
                 const { name, value } = attrs[i];
                 if (name[0] === ':') {
-                    kList.push(effect(() => ops[name.slice(1) === 'class' ? 'class' : 'attr'](el, getValue(scope, value, el), name.slice(1)), nextTick));
+                    kList.push(effect(() => {
+                        const { val: res, ctx } = evaluate(scope, value);
+                        ops[name.slice(1) === 'class' ? 'class' : 'attr'](el, typeof res === 'function' ? res.call(ctx) : res, name.slice(1));
+                    }, nextTick));
                 } else if (name.startsWith('s-')) {
                     const type = name.slice(2);
                     if (type === 'ref') state.$refs[value] = el;
                     else if (type === 'model') {
-                        kList.push(effect(() => ops.value(el, getValue(scope, value, el)), nextTick));
+                        kList.push(effect(() => {
+                            const { val: res } = evaluate(scope, value);
+                            ops.value(el, res); 
+                        }, nextTick));
                         if (/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName)) {
                             el._s = scope; el._m = value;
                             const evt = (el.type === 'checkbox' || el.type === 'radio' || el.tagName === 'SELECT') ? 'change' : 'input';
                             if (!root._e?.has(evt)) (root._e ??= new Set()).add(evt) && root.addEventListener(evt, handleEvent);
                         }
                     } else if (ops[type]) {
-                        kList.push(effect(() => ops[type](el, getValue(scope, value, el)), nextTick));
+                        kList.push(effect(() => {
+                            const { val: res, ctx } = evaluate(scope, value);
+                            ops[type](el, typeof res === 'function' ? res.call(ctx) : res);
+                        }, nextTick));
                     } else {
                         el._s = scope;
                         (metaMap.get(el) ?? metaMap.set(el, {}).get(el))[type] = value;
