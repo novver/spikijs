@@ -173,7 +173,11 @@ const spiki = (() => {
             }
 
             let child = el.firstElementChild;
-            while (child) { walk(child, scope, kList); child = child.nextElementSibling; }
+            while (child) { 
+                const next = child.nextElementSibling; 
+                walk(child, scope, kList); 
+                child = next; 
+            }
         };
 
         const rootK = [];
