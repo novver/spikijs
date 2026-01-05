@@ -1,13 +1,25 @@
 const spiki = (() => {
-
     const registry = Object.create(null),
           [metaMap, targetMap, proxyMap] = [new WeakMap(), new WeakMap(), new WeakMap()],
           pathCache = new Map(),
           loopRE = /^\s*(.*?)\s+in\s+(.+)\s*$/,
           queue = new Set();
           
-    let activeEffect, isFlushing, p = Promise.resolve();
-    let globalStore;
+    let activeEffect, isFlushing, p = Promise.resolve(), globalStore;
+    
+    let shouldTrigger = true; 
+
+    const arrayInstrumentations = {};
+    ['sort', 'reverse', 'splice'].forEach(method => {
+        const original = Array.prototype[method];
+        arrayInstrumentations[method] = function(...args) {
+            shouldTrigger = false; 
+            const res = original.apply(this, args);
+            shouldTrigger = true;
+            trigger(this, 'length');
+            return res;
+        };
+    });
 
     // 1. Helpers
     const getValue = (root, path, arg, exec = true) => {
@@ -18,6 +30,7 @@ const spiki = (() => {
         
         let parts = pathCache.get(path);
         if (!parts) {
+            if (pathCache.size > 500) pathCache.clear();
             pathCache.set(path, (parts = path.split('.')));
         }
         
@@ -26,10 +39,11 @@ const spiki = (() => {
         return (exec && typeof v === 'function') ? v.call(root, arg) : v;
     };
     
+    // 2. Scheduler
     const nextTick = fn => !queue.has(fn) && queue.add(fn) && !isFlushing && (isFlushing = true) && 
         p.then(() => (queue.forEach(j => j()), queue.clear(), isFlushing = false));
 
-    // 2. Reactivity
+    // 3. Reactivity System
     const track = (t, k) => {
         if (!activeEffect) return;
         let deps = targetMap.get(t);
@@ -40,7 +54,10 @@ const spiki = (() => {
         activeEffect.d.add(dep);
     };
 
-    const trigger = (t, k) => targetMap.get(t)?.get(k)?.forEach(e => e.x ? e.x(e) : e());
+    const trigger = (t, k) => {
+        if (!shouldTrigger) return;
+        targetMap.get(t)?.get(k)?.forEach(e => e.x ? e.x(e) : e());
+    };
 
     const effect = (fn, scheduler) => {
         const runner = () => {
@@ -52,17 +69,37 @@ const spiki = (() => {
         runner.d = new Set();
         runner.x = scheduler;
         runner();
-        return () => (runner.d.forEach(d => d.delete(runner)), runner.d.clear());
+        
+        return () => {
+            runner.d.forEach(d => d.delete(runner)); 
+            runner.d.clear();
+            queue.delete(runner);
+        };
     };
 
     const reactive = (obj) => {
         if (!obj || typeof obj !== 'object' || obj._p || obj instanceof Node) return obj;
         return proxyMap.get(obj) || proxyMap.set(obj, new Proxy(obj, {
-            get: (t, k, r) => (k === '_p' ? true : (track(t, k), 
-                ((res) => (res && typeof res === 'object' && !(res instanceof Node)) ? reactive(res) : res)(Reflect.get(t, k, r)))),
+            get: (t, k, r) => {
+                if (k === '_p') return true;
+                if (Array.isArray(t) && arrayInstrumentations.hasOwnProperty(k)) return arrayInstrumentations[k];
+                track(t, k);
+                const res = Reflect.get(t, k, r);
+                return (res && typeof res === 'object' && !(res instanceof Node)) ? reactive(res) : res;
+            },
             set: (t, k, v, r) => {
-                const old = t[k], res = Reflect.set(t, k, v, r);
-                if (old !== v) { trigger(t, k); Array.isArray(t) && k !== 'length' && trigger(t, 'length'); }
+                const old = t[k];
+                const hadKey = Array.isArray(t) ? Number(k) < t.length : Object.prototype.hasOwnProperty.call(t, k);
+                const res = Reflect.set(t, k, v, r);
+
+                if (shouldTrigger) {
+                    if (!hadKey) {
+                        trigger(t, k);
+                        if (Array.isArray(t)) trigger(t, 'length');
+                    } else if (old !== v) {
+                        trigger(t, k);
+                    }
+                }
                 return res;
             }
         })).get(obj);
@@ -70,7 +107,7 @@ const spiki = (() => {
 
     globalStore = reactive({});
 
-    // 3. DOM Operations
+    // 4. DOM Operations
     const ops = {
         text: (el, v) => el.textContent = v ?? '',
         html: (el, v) => el.innerHTML = v ?? '',
@@ -84,7 +121,7 @@ const spiki = (() => {
         init: () => {}, destroy: () => {}
     };
 
-    // 4. Component Engine
+    // 5. Engine
     const mount = (root) => {
         if (root._m) return; root._m = 1;
         const fac = registry[root.getAttribute('s-data')];
@@ -93,30 +130,25 @@ const spiki = (() => {
         const state = reactive(fac());
         state.$refs = {};
         state.$root = root;
-        state.$store = globalStore;
+        state.$store = globalStore; 
         
         const regFx = (fn, kList) => kList.push(effect(fn, nextTick));
 
         const handleEvent = (e) => {
             let t = e.target;
-
             if (t._m && (e.type === 'input' || e.type === 'change')) {
                 const scope = t._s || state;
                 const path = t._m;
                 const v = t.type === 'checkbox' ? t.checked : t.value;
-                
                 if (path.indexOf('.') > -1) {
                     const parts = pathCache.get(path) || path.split('.');
                     if (!pathCache.has(path)) pathCache.set(path, parts);
-                    
                     let target = scope;
                     for(let i=0; i<parts.length-1; i++) target = target[parts[i]];
                     target[parts[parts.length-1]] = v;
-                } else {
-                    scope[path] = v;
-                }
+                } else scope[path] = v;
             }
-
+            
             let hn;
             while (t && t !== root.parentNode) {
                 if (hn = metaMap.get(t)?.[e.type]) {
@@ -129,7 +161,6 @@ const spiki = (() => {
 
         const walk = (el, scope, kList) => {
             if (el.nodeType !== 1 || el.hasAttribute('s-ignore')) return;
-            
             if (el !== root && el.hasAttribute('s-data')) {
                 const child = mount(el);
                 if (child) kList.push(child.unmount);
@@ -169,6 +200,8 @@ const spiki = (() => {
 
                 return regFx(() => {
                     const items = getValue(scope, listKey), nextPool = new Map();
+                    if (Array.isArray(items)) track(items, 'length');
+
                     let cursor = anchor;
                     const list = Array.isArray(items) ? items : (items ? Object.keys(items) : []);
 
@@ -180,7 +213,6 @@ const spiki = (() => {
                         if (!row) {
                             const clone = el.content.cloneNode(true), s = Object.create(scope), rowK = [];
                             s[alias] = item; if (idx) s[idx] = key;
-                            
                             const nodes = [];
                             let c = clone.firstChild;
                             while (c) {
@@ -219,18 +251,13 @@ const spiki = (() => {
                 } 
                 else if (prefix === 's' && name[1] === '-') {
                     const type = name.slice(2);
-                    
                     if (type === 'ref') state.$refs[value] = el;
-                    
                     else if (type === 'model') {
                         regFx(() => ops.value(el, getValue(scope, value, el)), kList);
                         const tag = el.tagName;
                         if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') {
-                            el._s = scope;
-                            el._m = value;
-                            const isCheck = el.type === 'checkbox' || el.type === 'radio';
-                            const evt = (isCheck || tag === 'SELECT') ? 'change' : 'input';
-                            
+                            el._s = scope; el._m = value; 
+                            const evt = (el.type === 'checkbox' || el.type === 'radio' || tag === 'SELECT') ? 'change' : 'input';
                             if (!root._e?.has(evt)) {
                                 (root._e ??= new Set()).add(evt);
                                 root.addEventListener(evt, handleEvent);
@@ -266,14 +293,13 @@ const spiki = (() => {
         return { 
             unmount: () => {
                 if (state.destroy) state.destroy.call(state); 
-                rootK.forEach(s => s());
+                rootK.forEach(s => s()); 
                 root._e?.forEach(k => root.removeEventListener(k, handleEvent));
                 root._m = 0;
             } 
         };
     };
 
-    // 5. Public API
     return { 
         data: (n, f) => registry[n] = f, 
         start: () => document.querySelectorAll('[s-data]').forEach(mount),
