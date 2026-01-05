@@ -10,7 +10,7 @@
     *   **Event Delegation:** Attaches only **one** event listener per event type to the root element, regardless of how many list items you have.
     *   **Optimized List Rendering:** Smart diffing algorithm for `s-for` that reuses DOM nodes and minimizes reflows.
     *   **Memory Efficient:** Uses `WeakMap` for dependency tracking to prevent memory leaks.
-*   **🔍 ~5 KB (minify):** Tiny footprint, no build step required.
+*   **🔍 ~2.5 KB (Gzip):** Tiny footprint, no build step required.
 
 ---
 
