@@ -1,4 +1,5 @@
 const spiki = (() => {
+
     const registry = Object.create(null),
           [metaMap, targetMap, proxyMap] = [new WeakMap(), new WeakMap(), new WeakMap()],
           pathCache = new Map(),
@@ -6,26 +7,29 @@ const spiki = (() => {
           queue = new Set();
           
     let activeEffect, isFlushing, p = Promise.resolve();
+    let globalStore;
 
-    // 1. Helper (Optimized)
+    // 1. Helpers
     const getValue = (root, path, arg, exec = true) => {
         if (path.indexOf('.') === -1) {
             const v = root[path];
             return (exec && typeof v === 'function') ? v.call(root, arg) : v;
         }
+        
         let parts = pathCache.get(path);
-        if (!parts) pathCache.set(path, (parts = path.split('.')));
+        if (!parts) {
+            pathCache.set(path, (parts = path.split('.')));
+        }
         
         let v = root;
         for (const p of parts) if ((v = v?.[p]) === undefined) return;
         return (exec && typeof v === 'function') ? v.call(root, arg) : v;
     };
     
-    // 2. Scheduler
     const nextTick = fn => !queue.has(fn) && queue.add(fn) && !isFlushing && (isFlushing = true) && 
         p.then(() => (queue.forEach(j => j()), queue.clear(), isFlushing = false));
 
-    // 3. Reactivity
+    // 2. Reactivity
     const track = (t, k) => {
         if (!activeEffect) return;
         let deps = targetMap.get(t);
@@ -64,7 +68,9 @@ const spiki = (() => {
         })).get(obj);
     };
 
-    // 4. DOM Ops
+    globalStore = reactive({});
+
+    // 3. DOM Operations
     const ops = {
         text: (el, v) => el.textContent = v ?? '',
         html: (el, v) => el.innerHTML = v ?? '',
@@ -78,7 +84,7 @@ const spiki = (() => {
         init: () => {}, destroy: () => {}
     };
 
-    // 5. Engine
+    // 4. Component Engine
     const mount = (root) => {
         if (root._m) return; root._m = 1;
         const fac = registry[root.getAttribute('s-data')];
@@ -87,11 +93,31 @@ const spiki = (() => {
         const state = reactive(fac());
         state.$refs = {};
         state.$root = root;
+        state.$store = globalStore;
         
         const regFx = (fn, kList) => kList.push(effect(fn, nextTick));
 
         const handleEvent = (e) => {
-            let t = e.target, hn;
+            let t = e.target;
+
+            if (t._m && (e.type === 'input' || e.type === 'change')) {
+                const scope = t._s || state;
+                const path = t._m;
+                const v = t.type === 'checkbox' ? t.checked : t.value;
+                
+                if (path.indexOf('.') > -1) {
+                    const parts = pathCache.get(path) || path.split('.');
+                    if (!pathCache.has(path)) pathCache.set(path, parts);
+                    
+                    let target = scope;
+                    for(let i=0; i<parts.length-1; i++) target = target[parts[i]];
+                    target[parts[parts.length-1]] = v;
+                } else {
+                    scope[path] = v;
+                }
+            }
+
+            let hn;
             while (t && t !== root.parentNode) {
                 if (hn = metaMap.get(t)?.[e.type]) {
                     const fn = getValue(t._s || state, hn, null, false);
@@ -103,6 +129,7 @@ const spiki = (() => {
 
         const walk = (el, scope, kList) => {
             if (el.nodeType !== 1 || el.hasAttribute('s-ignore')) return;
+            
             if (el !== root && el.hasAttribute('s-data')) {
                 const child = mount(el);
                 if (child) kList.push(child.unmount);
@@ -110,6 +137,7 @@ const spiki = (() => {
             }
 
             let val;
+            // s-if
             if (val = el.getAttribute('s-if')) {
                 const anchor = document.createTextNode(''), branchK = [];
                 el.replaceWith(anchor);
@@ -129,6 +157,7 @@ const spiki = (() => {
                 }, kList);
             }
 
+            // s-for
             if (el.tagName === 'TEMPLATE' && (val = el.getAttribute('s-for'))) {
                 const match = val.match(loopRE);
                 if (!match) return;
@@ -192,23 +221,20 @@ const spiki = (() => {
                     const type = name.slice(2);
                     
                     if (type === 'ref') state.$refs[value] = el;
+                    
                     else if (type === 'model') {
                         regFx(() => ops.value(el, getValue(scope, value, el)), kList);
                         const tag = el.tagName;
                         if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') {
+                            el._s = scope;
+                            el._m = value;
                             const isCheck = el.type === 'checkbox' || el.type === 'radio';
                             const evt = (isCheck || tag === 'SELECT') ? 'change' : 'input';
-                            const handler = () => {
-                                const v = el.type === 'checkbox' ? el.checked : el.value;
-                                if (value.indexOf('.') > -1) {
-                                    const parts = value.split('.'), last = parts.pop();
-                                    let t = scope;
-                                    for (const p of parts) t = t[p];
-                                    t[last] = v;
-                                } else scope[value] = v;
-                            };
-                            el.addEventListener(evt, handler);
-                            kList.push(() => el.removeEventListener(evt, handler));
+                            
+                            if (!root._e?.has(evt)) {
+                                (root._e ??= new Set()).add(evt);
+                                root.addEventListener(evt, handleEvent);
+                            }
                         }
                     }
                     else if (ops[type]) {
@@ -247,10 +273,15 @@ const spiki = (() => {
         };
     };
 
-    return {
+    // 5. Public API
+    return { 
         data: (n, f) => registry[n] = f, 
         start: () => document.querySelectorAll('[s-data]').forEach(mount),
-        store: (obj) => reactive(obj)
+        store: (key, val) => {
+            if (val === undefined) return globalStore[key];
+            globalStore[key] = val;
+            return globalStore[key];
+        }
     };
 })();
 
