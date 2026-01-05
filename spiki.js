@@ -161,7 +161,7 @@ const spiki = (() => {
 
                 return kList.push(effect(() => {
                     const { val: res, ctx } = evaluate(scope, val);
-                    const truthy = typeof res === 'function' ? res.call(ctx) : res;
+                    const truthy = typeof res === 'function' ? res.call(ctx, el) : res;
 
                     if (truthy) {
                         if (!node) {
@@ -254,7 +254,7 @@ const spiki = (() => {
                 if (name[0] === ':') {
                     kList.push(effect(() => {
                         const { val: res, ctx } = evaluate(scope, value);
-                        ops[name.slice(1) === 'class' ? 'class' : 'attr'](el, typeof res === 'function' ? res.call(ctx) : res, name.slice(1));
+                        ops[name.slice(1) === 'class' ? 'class' : 'attr'](el, typeof res === 'function' ? res.call(ctx, el) : res, name.slice(1));
                     }, nextTick));
                 } else if (name.startsWith('s-')) {
                     const type = name.slice(2);
@@ -272,7 +272,7 @@ const spiki = (() => {
                     } else if (ops[type]) {
                         kList.push(effect(() => {
                             const { val: res, ctx } = evaluate(scope, value);
-                            ops[type](el, typeof res === 'function' ? res.call(ctx) : res);
+                            ops[type](el, typeof res === 'function' ? res.call(ctx, el) : res);
                         }, nextTick));
                     } else {
                         el._s = scope;
