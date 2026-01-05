@@ -9,13 +9,15 @@ const spiki = (() => {
 
     // 1. Array Interceptors
     const arrayInstrumentations = {};
-    ['sort', 'reverse', 'splice'].forEach(m => arrayInstrumentations[m] = function(...args) {
-        shouldTrigger = false;
-        const res = Array.prototype[m].apply(this, args);
-        shouldTrigger = true;
-        trigger(this, 'length');
-        return res;
-    });
+    ['push', 'pop', 'shift', 'unshift', 'splice', 'sort', 'reverse'].forEach(m => 
+        arrayInstrumentations[m] = function(...args) {
+            shouldTrigger = false;
+            const res = Array.prototype[m].apply(this, args);
+            shouldTrigger = true;
+            trigger(this, 'length');
+            return res;
+        }
+    );
 
     // 2. Helpers & Scheduler
     const getValue = (root, path, arg, exec = true) => {
@@ -25,7 +27,6 @@ const spiki = (() => {
         }
         let parts = pathCache.get(path);
         if (!parts) {
-            if (pathCache.size > 500) pathCache.clear();
             pathCache.set(path, (parts = path.split('.')));
         }
         let v = root;
