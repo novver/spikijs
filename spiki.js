@@ -1,17 +1,23 @@
 const spiki = (() => {
     const registry = Object.create(null),
           [metaMap, targetMap, proxyMap] = [new WeakMap(), new WeakMap(), new WeakMap()],
+          pathCache = new Map(),
           loopRE = /^\s*(.*?)\s+in\s+(.+)\s*$/,
           queue = new Set();
           
     let activeEffect, isFlushing, p = Promise.resolve();
 
-    // 1. Helper
+    // 1. Helper (Optimized)
     const getValue = (root, path, arg, exec = true) => {
+        if (path.indexOf('.') === -1) {
+            const v = root[path];
+            return (exec && typeof v === 'function') ? v.call(root, arg) : v;
+        }
+        let parts = pathCache.get(path);
+        if (!parts) pathCache.set(path, (parts = path.split('.')));
+        
         let v = root;
-        if (path.indexOf('.') > -1) {
-            for (const p of path.split('.')) if ((v = v?.[p]) === undefined) return;
-        } else v = root[path];
+        for (const p of parts) if ((v = v?.[p]) === undefined) return;
         return (exec && typeof v === 'function') ? v.call(root, arg) : v;
     };
     
@@ -22,8 +28,10 @@ const spiki = (() => {
     // 3. Reactivity
     const track = (t, k) => {
         if (!activeEffect) return;
-        let dep = (targetMap.get(t) || targetMap.set(t, new Map()).get(t)).get(k) || 
-                  (targetMap.get(t).set(k, new Set()).get(k));
+        let deps = targetMap.get(t);
+        if (!deps) targetMap.set(t, (deps = new Map()));
+        let dep = deps.get(k);
+        if (!dep) deps.set(k, (dep = new Set()));
         dep.add(activeEffect);
         activeEffect.d.add(dep);
     };
@@ -60,11 +68,14 @@ const spiki = (() => {
     const ops = {
         text: (el, v) => el.textContent = v ?? '',
         html: (el, v) => el.innerHTML = v ?? '',
-        value: (el, v) => el.type === 'checkbox' ? el.checked = !!v : 
-                         (el.type === 'radio' && el.name) ? el.checked = el.value == v : el.value = v ?? '',
+        value: (el, v) => {
+            if (el.type === 'checkbox') el.checked = !!v;
+            else if (el.type === 'radio' && el.name) el.checked = el.value == v;
+            else if (el.value != v) el.value = v ?? '';
+        },
         attr: (el, v, arg) => (v == null || v === false) ? el.removeAttribute(arg) : el.setAttribute(arg, v === true ? '' : v),
         class: (el, v) => typeof v === 'string' && v.split(/\s+/).forEach(c => c && (c[0] === '!' ? el.classList.remove(c.slice(1)) : el.classList.add(c))),
-        init: () => {}
+        init: () => {}, destroy: () => {}
     };
 
     // 5. Engine
@@ -74,7 +85,8 @@ const spiki = (() => {
         if (!fac) return;
 
         const state = reactive(fac());
-        state.$refs = {}; 
+        state.$refs = {};
+        state.$root = root;
         
         const regFx = (fn, kList) => kList.push(effect(fn, nextTick));
 
@@ -91,7 +103,11 @@ const spiki = (() => {
 
         const walk = (el, scope, kList) => {
             if (el.nodeType !== 1 || el.hasAttribute('s-ignore')) return;
-            if (el !== root && el.hasAttribute('s-data')) return mount(el);
+            if (el !== root && el.hasAttribute('s-data')) {
+                const child = mount(el);
+                if (child) kList.push(child.unmount);
+                return;
+            }
 
             let val;
             if (val = el.getAttribute('s-if')) {
@@ -135,8 +151,16 @@ const spiki = (() => {
                         if (!row) {
                             const clone = el.content.cloneNode(true), s = Object.create(scope), rowK = [];
                             s[alias] = item; if (idx) s[idx] = key;
-                            Array.from(clone.childNodes).forEach(c => walk(c, s, rowK));
-                            row = { n: Array.from(clone.childNodes), s, k: rowK }; 
+                            
+                            const nodes = [];
+                            let c = clone.firstChild;
+                            while (c) {
+                                nodes.push(c);
+                                const next = c.nextSibling;
+                                walk(c, s, rowK);
+                                c = next;
+                            }
+                            row = { n: nodes, s, k: rowK }; 
                         } else {
                             row.s[alias] = item; if (idx) row.s[idx] = key;
                         }
@@ -158,35 +182,76 @@ const spiki = (() => {
             const attrs = el.attributes;
             for (let i = attrs.length - 1; i >= 0; i--) {
                 const { name, value } = attrs[i];
-                if (name[0] === ':') {
-                    regFx(() => ops[name.slice(1) === 'class' ? 'class' : 'attr'](el, getValue(scope, value, el), name.slice(1)), kList);
-                } else if (name[0] === 's' && name[1] === '-') {
-                    const key = name.slice(2);
-                    if (key === 'ref') state.$refs[value] = el;
-                    else if (ops[key]) regFx(() => ops[key](el, getValue(scope, value, el)), kList);
+                const prefix = name[0];
+
+                if (prefix === ':') {
+                    const attr = name.slice(1);
+                    regFx(() => ops[attr === 'class' ? 'class' : 'attr'](el, getValue(scope, value, el), attr), kList);
+                } 
+                else if (prefix === 's' && name[1] === '-') {
+                    const type = name.slice(2);
+                    
+                    if (type === 'ref') state.$refs[value] = el;
+                    else if (type === 'model') {
+                        regFx(() => ops.value(el, getValue(scope, value, el)), kList);
+                        const tag = el.tagName;
+                        if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') {
+                            const isCheck = el.type === 'checkbox' || el.type === 'radio';
+                            const evt = (isCheck || tag === 'SELECT') ? 'change' : 'input';
+                            const handler = () => {
+                                const v = el.type === 'checkbox' ? el.checked : el.value;
+                                if (value.indexOf('.') > -1) {
+                                    const parts = value.split('.'), last = parts.pop();
+                                    let t = scope;
+                                    for (const p of parts) t = t[p];
+                                    t[last] = v;
+                                } else scope[value] = v;
+                            };
+                            el.addEventListener(evt, handler);
+                            kList.push(() => el.removeEventListener(evt, handler));
+                        }
+                    }
+                    else if (ops[type]) {
+                        regFx(() => ops[type](el, getValue(scope, value, el)), kList);
+                    }
                     else { 
                         el._s = scope;
-                        (metaMap.get(el) || metaMap.set(el, {}).get(el))[key] = value;
-                        (root._e ||= new Set()).add(key) && root.addEventListener(key, handleEvent);
+                        (metaMap.get(el) ?? metaMap.set(el, {}).get(el))[type] = value;
+                        if (!root._e?.has(type)) {
+                            (root._e ??= new Set()).add(type);
+                            root.addEventListener(type, handleEvent);
+                        }
                     }
                 }
             }
 
             let child = el.firstElementChild;
-            while (child) { 
-                const next = child.nextElementSibling; 
-                walk(child, scope, kList); 
-                child = next; 
+            while (child) {
+                const next = child.nextElementSibling;
+                walk(child, scope, kList);
+                child = next;
             }
         };
 
         const rootK = [];
         walk(root, state, rootK);
         if (state.init) state.init();
-        return { unmount: () => (rootK.forEach(s => s()), root._m = 0) };
+        
+        return { 
+            unmount: () => {
+                if (state.destroy) state.destroy.call(state); 
+                rootK.forEach(s => s());
+                root._e?.forEach(k => root.removeEventListener(k, handleEvent));
+                root._m = 0;
+            } 
+        };
     };
 
-    return { data: (n, f) => registry[n] = f, start: () => document.querySelectorAll('[s-data]').forEach(mount) };
+    return {
+        data: (n, f) => registry[n] = f, 
+        start: () => document.querySelectorAll('[s-data]').forEach(mount),
+        store: (obj) => reactive(obj)
+    };
 })();
 
 export default spiki;
