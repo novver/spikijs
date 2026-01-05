@@ -30,7 +30,6 @@ const spiki = (() => {
         
         let parts = pathCache.get(path);
         if (!parts) {
-            if (pathCache.size > 500) pathCache.clear();
             pathCache.set(path, (parts = path.split('.')));
         }
         
