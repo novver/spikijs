@@ -1,21 +1,24 @@
 const spiki = (() => {
     const registry = Object.create(null),
-          [metaMap, targetMap, proxyMap] = [new WeakMap(), new WeakMap(), new WeakMap()],
-          pathCache = new Map(),
-          queue = new Set(),
-          loopRE = /^\s*(.*?)\s+in\s+(.+)\s*$/;
+        [metaMap, targetMap, proxyMap] = [new WeakMap(), new WeakMap(), new WeakMap()],
+        pathCache = new Map(),
+        queue = new Set(),
+        loopRE = /^\s*(.*?)\s+in\s+(.+)\s*$/;
 
     let activeEffect, isFlushing, globalStore, shouldTrigger = true, p = Promise.resolve();
 
     // 1. Array Interceptors
     const arrayInstrumentations = {};
-    ['push', 'pop', 'shift', 'unshift', 'splice', 'sort', 'reverse'].forEach(m => 
-        arrayInstrumentations[m] = function(...args) {
+    ['push', 'pop', 'shift', 'unshift', 'splice', 'sort', 'reverse'].forEach(m =>
+        arrayInstrumentations[m] = function (...args) {
             shouldTrigger = false;
-            const res = Array.prototype[m].apply(this, args);
-            shouldTrigger = true;
-            trigger(this, 'length');
-            return res;
+            try {
+                const res = Array.prototype[m].apply(this, args);
+                return res;
+            } finally {
+                shouldTrigger = true;
+                trigger(this, 'length');
+            }
         }
     );
 
@@ -34,14 +37,20 @@ const spiki = (() => {
         });
     };
 
+    // Not write logic in HTML
     const evaluate = (scope, path) => {
         if (typeof path !== 'string') return { val: path, ctx: scope };
         let parts = pathCache.get(path);
-        if (!parts) pathCache.set(path, (parts = path.split('.')));
-        
+        if (!parts){
+            if (pathCache.size > 1000) pathCache.clear();
+            pathCache.set(path, (parts = path.split('.')));
+        }
+            
         let val = scope, ctx = scope;
         for (const part of parts) {
-            if (val == null) break; 
+            if (val == null) {
+                return { val, ctx: null }; 
+            }
             ctx = val;
             val = val[part];
         }
@@ -90,6 +99,15 @@ const spiki = (() => {
                 const res = Reflect.set(t, k, v, r);
                 if (shouldTrigger && (!hadKey ? (trigger(t, k), Array.isArray(t) && trigger(t, 'length')) : old !== v && trigger(t, k)));
                 return res;
+            },
+            deleteProperty: (t, k) => {
+                const hadKey = Object.prototype.hasOwnProperty.call(t, k);
+                const res = Reflect.deleteProperty(t, k);
+                if (res && hadKey) {
+                    trigger(t, k);
+                    if (Array.isArray(t)) trigger(t, 'length');
+                }
+                return res;
             }
         })).get(obj);
     };
@@ -99,12 +117,13 @@ const spiki = (() => {
     // 4. DOM Ops
     const ops = {
         text: (el, v) => el.textContent = v ?? '',
+        //Fleksibilitas "Escape Hatch"
         html: (el, v) => el.innerHTML = v ?? '',
-        value: (el, v) => el.type === 'checkbox' ? el.checked = !!v : 
-               (el.type === 'radio' && el.name ? el.checked = el.value == v : (el.value != v && (el.value = v ?? ''))),
+        value: (el, v) => el.type === 'checkbox' ? el.checked = !!v :
+            (el.type === 'radio' && el.name ? el.checked = el.value == v : (el.value != v && (el.value = v ?? ''))),
         attr: (el, v, arg) => v == null || v === false ? el.removeAttribute(arg) : el.setAttribute(arg, v === true ? '' : v),
         class: (el, v) => typeof v === 'string' && v.split(/\s+/).forEach(c => c && el.classList[c[0] === '!' ? 'remove' : 'add'](c[0] === '!' ? c.slice(1) : c)),
-        init: () => {}, destroy: () => {}
+        init: () => { }, destroy: () => { }
     };
 
     // 5. Engine
@@ -115,20 +134,20 @@ const spiki = (() => {
 
         const state = reactive(fac());
         state.$refs = {}; state.$root = root; state.$store = globalStore;
-        
-        const rootK = []; 
+
+        const rootK = [];
 
         const handleEvent = (e) => {
             let t = e.target;
             if (t._m && (e.type === 'input' || e.type === 'change')) {
                 const path = t._m, v = t.type === 'checkbox' ? t.checked : t.value;
                 const { ctx: parentObj } = evaluate(t._s || state, path);
-                
+
                 if (path.indexOf('.') === -1) {
-                    (t._s || state)[path] = v; 
+                    (t._s || state)[path] = v;
                 } else if (parentObj) {
                     const parts = path.split('.');
-                    parentObj[parts[parts.length - 1]] = v; 
+                    parentObj[parts[parts.length - 1]] = v;
                 }
             }
 
@@ -144,7 +163,7 @@ const spiki = (() => {
 
         const walk = (el, scope, kList) => {
             if (el.nodeType !== 1 || el.hasAttribute('s-ignore')) return;
-            
+
             if (el !== root && el.hasAttribute('s-data')) {
                 const child = mount(el);
                 if (child) kList.push(child.unmount);
@@ -156,7 +175,7 @@ const spiki = (() => {
                 const anchor = document.createTextNode(''), branchK = [];
                 el.replaceWith(anchor);
                 let node;
-                
+
                 kList.push(() => branchK.forEach(s => s()));
 
                 return kList.push(effect(() => {
@@ -197,7 +216,7 @@ const spiki = (() => {
 
                     iterable.forEach((raw, i) => {
                         const [key, item] = Array.isArray(items) ? [i, raw] : [raw, items[raw]];
-                        
+
                         let rowKey;
                         if (keyAttr && item) rowKey = item[keyAttr];
                         else rowKey = (typeof item === 'object' && item) ? item : key + '_' + item;
@@ -216,7 +235,7 @@ const spiki = (() => {
                             const clone = el.content.cloneNode(true);
                             const s = createScope(scope);
                             const rowK = [];
-                            
+
                             defineAlias(s);
                             if (idx) s[idx] = key;
 
@@ -228,7 +247,7 @@ const spiki = (() => {
                                 walk(c, s, rowK);
                                 c = next;
                             }
-                            row = { n: nodes, s, k: rowK }; 
+                            row = { n: nodes, s, k: rowK };
                         } else {
                             defineAlias(row.s);
                             if (idx) row.s[idx] = key;
@@ -243,7 +262,7 @@ const spiki = (() => {
                         nextPool.set(rowKey, row);
                         pool.delete(rowKey);
                     });
-                    pool.forEach(row => (row.k.forEach(s => s()), row.n.forEach(n => n.remove()))); 
+                    pool.forEach(row => (row.k.forEach(s => s()), row.n.forEach(n => n.remove())));
                     pool = nextPool;
                 }, nextTick));
             }
@@ -262,7 +281,7 @@ const spiki = (() => {
                     else if (type === 'model') {
                         kList.push(effect(() => {
                             const { val: res } = evaluate(scope, value);
-                            ops.value(el, res); 
+                            ops.value(el, res);
                         }, nextTick));
                         if (/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName)) {
                             el._s = scope; el._m = value;
@@ -292,14 +311,14 @@ const spiki = (() => {
 
         walk(root, state, rootK);
         state.init?.();
-        
-        return { 
+
+        return {
             unmount: () => (state.destroy?.call(state), rootK.forEach(s => s()), root._e?.forEach(k => root.removeEventListener(k, handleEvent)), root._m = 0)
         };
     };
 
-    return { 
-        data: (n, f) => registry[n] = f, 
+    return {
+        data: (n, f) => registry[n] = f,
         start: () => document.querySelectorAll('[s-data]').forEach(mount),
         store: (k, v) => v === undefined ? globalStore[k] : (globalStore[k] = v)
     };
