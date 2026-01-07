@@ -175,9 +175,11 @@ Iterates over Arrays or Objects. Supports optional `s-key` for performance.
 <div s-data="listApp">
     <ul>
         <!-- syntax: (item, index) in array -->
-        <li s-for="(todo, i) in todos" s-key="id">
-            <span s-text="i"></span> - <span s-text="todo.text"></span>
-        </li>
+        <template s-for="(todo, i) in todos" s-key="id">
+            <li>
+                <span s-text="todo.id"></span> - <span s-text="todo.text"></span> - <button s-click="remove">x</button>
+            </li>
+        </template>
     </ul>
 
     <button s-click="add">Add Item</button>
@@ -194,6 +196,12 @@ spiki.data('listApp', () => ({
 
     add() {
         this.todos.push({ id: Date.now(), text: 'Code' });
+    },
+
+    remove() {
+        // "this" inside an s-for loop inherits the parent scope
+        // plus the loop variable (e.g., "task") and "i"
+        this.todos.splice(this.i, 1);
     }
 }));
 ```
@@ -359,25 +367,6 @@ spiki.data('types', () => ({
 1.  **`this.$root`**: The root DOM element of the component.
 2.  **`this.$refs`**: Access elements marked with `s-ref`.
 3.  **`this.$store`**: Access the global store.
-
-### Loop Context (Inside `s-for`)
-When using `s-for`, the scope is inherited. You can access the current item and index via `this` inside function calls triggered from within the loop.
-
-```html
-<li s-for="(item, i) in list">
-    <span s-text="item"></span>
-
-    <button s-click="removeMe">x</button>
-</li>
-```
-
-```javascript
-removeMe() {
-
-    // 'this.i' is automatically available here
-    this.list.splice(this.i, 1);
-}
-```
 
 ### Lifecycle Hooks
 Define these methods in your data object to run code at specific times.
