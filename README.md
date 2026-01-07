@@ -67,7 +67,7 @@ Quick reference table summarizing all Spikijs syntaxes.
 | **`s-text`** | Updates text content. | `<span s-text="msg">` |
 | **`s-html`** | Updates inner HTML. | `<div s-html="htmlContent">` |
 | **`s-if`** | Conditional rendering. | `<p s-if="showMe">` |
-| **`s-for`** | **Must use `<template>`**. Loops content. | `<template s-for="item in list">` |
+| **`s-for`** | Must use `<template>`. Loops content. | `<template s-for="item in list">` |
 | **`s-key`** | Unique key on `<template>`. | `<template ... s-key="id">` |
 | **`s-model`** | Two-way binding (Input). | `<input s-model="text">` |
 | **`s-value`** | One-way binding (Input value). | `<input s-value="text">` |
@@ -75,7 +75,7 @@ Quick reference table summarizing all Spikijs syntaxes.
 | **`:[attr]`** | Dynamic attribute. | `<img :src="imgUrl">` |
 | **`:class`** | Dynamic class toggling. | `<div :class="activeClass">` |
 | **`s-[event]`** | Event listener. | `<button s-click="save">` |
-| **`s-init`** | **Runs a function** on mount. | `<div s-init="initElement">` |
+| **`s-init`** | Runs a function on mount. | `<div s-init="initElement">` |
 | **`s-ignore`** | Skips compilation. | `<div s-ignore>` |
 | **`this.$root`** | Access the root elm. | `this.$root.classList.add('loaded');` |
 | **`this.$store`** | Access the global store. | `this.$store.user.name` |
