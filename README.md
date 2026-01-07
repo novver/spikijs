@@ -19,7 +19,7 @@
 Just import it as a module. No bundler required (though you can use one).
 
 ```javascript
-import spiki from './spiki.min.js'; // or spiki.js
+import spiki from './spiki.esm.min.js'; // or spiki.esm.js
 ```
 
 ---
@@ -44,7 +44,7 @@ Use `s-data` to mount the component and directives to bind data.
 Register a component using `spiki.data`.
 
 ```javascript
-import spiki from './spiki.min.js';
+import spiki from './spiki.esm.min.js';
 
 spiki.data('counter', () => ({
     count: 0,
@@ -120,7 +120,7 @@ Since `s-value` is strict one-way binding (Data -> UI), you handle UI updates vi
 </div>
 
 <script type="module">
-    import spiki from './spiki.min.js';
+    import spiki from './spiki.esm.min.js';
 
     spiki.data('form-app', () => ({
         message: 'Type something...',
@@ -158,7 +158,7 @@ spiki's reactivity system detects Array mutations like `push`.
 </div>
 
 <script type="module">
-    import spiki from './spiki.min.js';
+    import spiki from './spiki.esm.min.js';
 
     spiki.data('todo-app', () => ({
         newTodo: '',
@@ -198,7 +198,7 @@ spiki's reactivity system detects Array mutations like `push`.
 </div>
 
 <script type="module">
-    import spiki from './spiki.min.js';
+    import spiki from './spiki.esm.min.js';
 
     spiki.data('timer', () => ({
         time: 0,
@@ -240,7 +240,7 @@ Put `s-if` outside the `<template>`
  </div>
 
 <script type="module">
-    import spiki from './spiki.min.js';
+    import spiki from './spiki.esm.min.js';
 
     spiki.data('movie-search', () => ({
       movies: [],
