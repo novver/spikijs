@@ -76,8 +76,7 @@ Quick reference table summarizing all Spikijs syntaxes.
 | **`:class`** | Dynamically toggles CSS classes. Prefix with `!` to remove. | `<div :class="statusClass"></div>`<br>JS returns: `"active"` or `"!active"` |
 | **`s-[event]`** | Listens for DOM events (click, submit, input, etc.). | `<button s-click="handleClick">Go</button>` |
 | **`s-ignore`** | Skips compilation for this element and its children. | `<div s-ignore><div id="map"></div></div>` |
-| **`s-init`** | Expression runs when the element is mounted. | `<div s-init="console.log('Loaded')"></div>` |
-| **`s-destroy`** | Expression runs when the element is removed. | `<div s-destroy="console.log('Removed')"></div>` |
+| **`s-init`** | Expression runs when the element is mounted. | `<div s-init="isLoaded"></div>` |
 | **`init()`** | **JS Lifecycle**: Method called after component mounts. | `init() { console.log('Ready'); }` |
 | **`destroy()`** | **JS Lifecycle**: Method called when component unmounts. | `destroy() { console.log('Gone'); }` |
 | **`this.$root`** | **JS Property**: Access the root DOM element of the component. | `this.$root.classList.add('loaded');` |
