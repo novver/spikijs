@@ -63,25 +63,23 @@ Quick reference table summarizing all Spikijs syntaxes.
 
 | Syntax | Description | Usage Example |
 | :--- | :--- | :--- |
-| **`s-data`** | Defines the scope of a component. Matches the name registered in `spiki.data`. | `<div s-data="myApp">...</div>` |
-| **`s-text`** | Updates the element's text content with the variable value. | `<span s-text="username"></span>` |
-| **`s-html`** | Updates the element's inner HTML (use trusted content only). | `<div s-html="rawContent"></div>` |
-| **`s-if`** | Conditionally renders the element. Removes it from DOM if false. | `<p s-if="isLoggedIn">Welcome!</p>` |
-| **`s-for`** | Iterates over an Array or Object. | `<template s-for="(item, i) in list">...</template>` |
-| **`s-key`** | (Optional) Unique key for `s-for` items to optimize rendering. | `<template s-for="user in users" s-key="id">` |
-| **`s-model`** | Two-way binding for inputs, selects, and textareas. | `<input s-model="email">` |
-| **`s-value`** | One-way binding for input values (State -> DOM only). | `<input s-value="calculatedResult" readonly>` |
-| **`s-ref`** | Stores a reference to the DOM element in `this.$refs`. | `<input s-ref="myBox">`<br>JS: `this.$refs.myBox.focus()` |
-| **`:[attr]`** | Dynamically binds an HTML attribute. Returns `false` to remove. | `<button :disabled="isProcessing">Save</button>` |
-| **`:class`** | Dynamically toggles CSS classes. Prefix with `!` to remove. | `<div :class="statusClass"></div>`<br>JS returns: `"active"` or `"!active"` |
-| **`s-[event]`** | Listens for DOM events (click, submit, input, etc.). | `<button s-click="handleClick">Go</button>` |
-| **`s-ignore`** | Skips compilation for this element and its children. | `<div s-ignore><div id="map"></div></div>` |
-| **`s-init`** | Expression runs when the element is mounted. | `<div s-init="isLoaded"></div>` |
-| **`init()`** | **JS Lifecycle**: Method called after component mounts. | `init() { console.log('Ready'); }` |
-| **`destroy()`** | **JS Lifecycle**: Method called when component unmounts. | `destroy() { console.log('Gone'); }` |
-| **`this.$root`** | **JS Property**: Access the root DOM element of the component. | `this.$root.classList.add('loaded');` |
-| **`this.$store`** | **JS Property**: Access the global reactive store. | `this.$store.user.name` |
-| **`spiki.store()`** | **Global API**: Get or set global shared data. | `spiki.store('theme', 'dark')` |
+| **`s-data`** | Defines scope. | `<div s-data="app">` |
+| **`s-text`** | Updates text content. | `<span s-text="msg">` |
+| **`s-html`** | Updates inner HTML. | `<div s-html="htmlContent">` |
+| **`s-if`** | Conditional rendering. | `<p s-if="showMe">` |
+| **`s-for`** | **Must use `<template>`**. Loops content. | `<template s-for="item in list">` |
+| **`s-key`** | Unique key on `<template>`. | `<template ... s-key="id">` |
+| **`s-model`** | Two-way binding (Input). | `<input s-model="text">` |
+| **`s-value`** | One-way binding (Input value). | `<input s-value="text">` |
+| **`s-ref`** | Stores DOM reference in `$refs`. | `<input s-ref="myInput">` |
+| **`:[attr]`** | Dynamic attribute. | `<img :src="imgUrl">` |
+| **`:class`** | Dynamic class toggling. | `<div :class="activeClass">` |
+| **`s-[event]`** | Event listener. | `<button s-click="save">` |
+| **`s-init`** | **Runs a function** on mount. | `<div s-init="initElement">` |
+| **`s-ignore`** | Skips compilation. | `<div s-ignore>` |
+| **`this.$root`** | Access the root elm. | `this.$root.classList.add('loaded');` |
+| **`this.$store`** | Access the global store. | `this.$store.user.name` |
+| **`spiki.store()`** | Get or set global store. | `spiki.store('theme', 'dark')` |
 
 ---
 
@@ -176,7 +174,9 @@ Iterates over Arrays or Objects. Supports optional `s-key` for performance.
         <!-- syntax: (item, index) in array -->
         <template s-for="(todo, i) in todos" s-key="id">
             <li>
-                <span s-text="todo.id"></span> - <span s-text="todo.text"></span> - <button s-click="remove">x</button>
+                <span s-text="todo.id"></span> -
+                <span s-text="todo.text"></span> -
+                <button s-click="remove">x</button>
             </li>
         </template>
     </ul>
