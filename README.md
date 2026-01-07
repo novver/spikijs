@@ -67,8 +67,8 @@ Quick reference table summarizing all Spikijs syntaxes.
 | **`s-text`** | Updates the element's text content with the variable value. | `<span s-text="username"></span>` |
 | **`s-html`** | Updates the element's inner HTML (use trusted content only). | `<div s-html="rawContent"></div>` |
 | **`s-if`** | Conditionally renders the element. Removes it from DOM if false. | `<p s-if="isLoggedIn">Welcome!</p>` |
-| **`s-for`** | Iterates over an Array or Object. | `<li s-for="(item, i) in list">...</li>` |
-| **`s-key`** | (Optional) Unique key for `s-for` items to optimize rendering. | `<li s-for="user in users" s-key="id">` |
+| **`s-for`** | Iterates over an Array or Object. | `<template s-for="(item, i) in list">...</template>` |
+| **`s-key`** | (Optional) Unique key for `s-for` items to optimize rendering. | `<template s-for="user in users" s-key="id">` |
 | **`s-model`** | Two-way binding for inputs, selects, and textareas. | `<input s-model="email">` |
 | **`s-value`** | One-way binding for input values (State -> DOM only). | `<input s-value="calculatedResult" readonly>` |
 | **`s-ref`** | Stores a reference to the DOM element in `this.$refs`. | `<input s-ref="myBox">`<br>JS: `this.$refs.myBox.focus()` |
