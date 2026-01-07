@@ -126,9 +126,11 @@ Updates the element's text content.
 <div s-data="example">
     <p>Hello, <span s-text="username"></span></p>
 </div>
-<script>
-    spiki.data('example', () => ({ username: 'Alice' }));
-</script>
+```
+```javascript
+spiki.data('example', () => ({
+    username: 'Alice'
+}));
 ```
 
 ### `s-html`
@@ -262,7 +264,7 @@ Dynamically toggles classes.
 ```html
 <div s-data="classApp">
     <!-- If isActive is true, class is 'box active'. If false, 'box' -->
-    <div class="box" :class="statusClass"></div>
+    <div :class="statusClass"></div>
 
     <button s-click="toggle">Toggle Class</button>
 </div>
@@ -323,7 +325,7 @@ One-way binding to set the `value` property of an input without listening for ch
 Runs an expression when the element is mounted.
 
 ```html
-<div s-init="console.log('Element loaded')"></div>
+<div s-init="isLoaded"></div>
 ```
 
 ---
