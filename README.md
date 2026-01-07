@@ -78,7 +78,7 @@ Quick reference table summarizing all Spikijs syntaxes.
 | **`s-init`** | Runs a function on mount. | `<div s-init="initElement">` |
 | **`s-ignore`** | Skips compilation. | `<div s-ignore>` |
 | **`this.$root`** | Access the root elm. | `this.$root.classList.add('loaded');` |
-| **`this.$store`** | Access the global store. | `this.$store.user.name` |
+| **`this.$store`** | Access the global store. | `this.$store.theme` |
 | **`spiki.store()`** | Get or set global store. | `spiki.store('theme', 'dark')` |
 
 ---
