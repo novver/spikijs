@@ -83,28 +83,6 @@ Quick reference table summarizing all Spikijs syntaxes.
 
 ---
 
-## Core API
-
-### `spiki.data(name, factory)`
-Registers a component.
-*   **name**: Must match the `s-data` attribute in HTML.
-*   **factory**: A function returning the initial object state.
-
-### `spiki.start()`
-Initializes the library and mounts all elements found with `s-data`.
-
-### `spiki.store(key, value?)`
-Access the global state shared across components.
-```javascript
-// Set
-spiki.store('user', { name: 'John' });
-
-// Get
-const user = spiki.store('user');
-```
-
----
-
 ## Directives & Features
 
 ### `s-data`
@@ -386,4 +364,25 @@ spiki.data('lifecycle', () => ({
         console.log('Component removed!');
     }
 }));
+```
+---
+
+## Core API
+
+### `spiki.data(name, factory)`
+Registers a component.
+*   **name**: Must match the `s-data` attribute in HTML.
+*   **factory**: A function returning the initial object state.
+
+### `spiki.start()`
+Initializes the library and mounts all elements found with `s-data`.
+
+### `spiki.store(key, value?)`
+Access the global state shared across components.
+```javascript
+// Set
+spiki.store('user', { name: 'John' });
+
+// Get
+const user = spiki.store('user');
 ```
