@@ -189,7 +189,7 @@ spiki.data('listApp', () => ({
 
     remove() {
         // "this" inside an s-for loop inherits the parent scope
-        // plus the loop variable (e.g., "task") and "i"
+        // plus the loop variable (e.g., "todo") and "i"
         this.todos.splice(this.i, 1);
     }
 }));
