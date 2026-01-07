@@ -92,7 +92,9 @@ Registers a component.
 
 ### `spiki.start()`
 Initializes the library and mounts all elements found with `s-data`.
+
 ---
+
 ## Directives & Features
 
 ### `s-data`
