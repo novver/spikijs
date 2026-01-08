@@ -29,7 +29,7 @@ import spiki from 'spikijs';
 You can drop Spiki directly into your HTML file using the script tag:
 
 ```html
-<script src="https://unpkg.com/spikijs@1.0.1/spiki.min.js"></script>
+<script src="//unpkg.com/spikijs"></script>
 ```
 
 ---
