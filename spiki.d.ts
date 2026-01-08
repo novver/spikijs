@@ -1,74 +1,85 @@
 /**
- * Interface representing the internal properties injected by Spiki.
- * These are available via 'this' inside your component.
+ * Interface representing the context of a Spiki component instance.
+ * These properties are automatically injected into the state returned by your factory function.
  */
-export interface SpikiInstance {
+export interface SpikiContext {
     /**
-     * The root DOM element of the component (the one with s-data).
+     * A dictionary of DOM elements marked with `s-ref="name"`.
+     * Key is the ref name, value is the HTMLElement.
      */
-    readonly $root: HTMLElement;
+    $refs: Record<string, HTMLElement>;
 
     /**
-     * References to DOM elements marked with `s-ref`.
-     * Example: <input s-ref="box"> becomes this.$refs.box
+     * The root HTMLElement where the component is mounted.
      */
-    readonly $refs: Record<string, HTMLElement>;
+    $root: HTMLElement;
 
     /**
-     * Access to the global reactive store.
+     * Direct access to the global reactive store.
      */
-    readonly $store: Record<string, any>;
+    $store: Record<string, any>;
 
     /**
-     * Lifecycle hook: Called immediately after the component is mounted.
+     * Lifecycle hook: Called immediately after the component is mounted and DOM is processed.
      */
     init?(): void;
 
     /**
-     * Lifecycle hook: Called when the component is removed from the DOM.
+     * Lifecycle hook: Called when the component is being unmounted/destroyed.
      */
     destroy?(): void;
 
     /**
-     * Index signature to allow dynamic properties.
-     * This prevents TypeScript errors when accessing variables 
-     * injected by 's-for' loops (e.g., this.item, this.index).
+     * Allows for arbitrary data and methods defined in the component factory.
      */
     [key: string]: any;
 }
 
-/**
- * Type helper for the data factory.
- * It ensures 'this' inside your methods includes both your data 
- * and Spiki's internal properties ($refs, $root, etc).
- */
-type ComponentFactory<T> = () => T & ThisType<T & SpikiInstance>;
-
-interface Spiki {
+export interface Spiki {
     /**
-     * Registers a new component.
+     * Registers a new component definition.
      * 
-     * @param name The name matching the 's-data' attribute in HTML.
-     * @param factory A function that returns the initial state object.
+     * @param name - The name of the component (corresponds to `s-data="name"` in HTML).
+     * @param factoryFn - A function that returns the initial state object (data and methods).
+     * 
+     * @example
+     * spiki.data('counter', () => ({
+     *   count: 0,
+     *   increment() { this.count++ }
+     * }));
      */
-    data<T extends object>(name: string, factory: ComponentFactory<T>): void;
+    data(name: string, factoryFn: () => object): void;
 
     /**
-     * Starts the Spiki engine.
-     * Scans the DOM for 's-data' elements and mounts them.
+     * Initializes the library.
+     * Scans the document for elements with `s-data` attributes and mounts them.
      */
     start(): void;
 
     /**
-     * Retrieves a value from the global store.
+     * Retrieves a value from the global reactive store.
+     * @param key - The key to retrieve.
      */
     store<T = any>(key: string): T;
 
     /**
-     * Sets a value in the global store.
+     * Sets a value in the global reactive store.
+     * @param key - The key to set.
+     * @param value - The value to store.
+     * @returns The value that was set.
      */
-    store<T = any>(key: string, value: T): T;
+    store<T>(key: string, value: T): T;
+
+    /**
+     * Unwraps a reactive proxy to return the original raw object.
+     * Useful for comparing strictly with non-reactive objects or performance optimization.
+     * 
+     * @param obj - The reactive object (proxy).
+     * @returns The original underlying object.
+     */
+    raw<T>(obj: T): T;
 }
 
 declare const spiki: Spiki;
+
 export default spiki;
