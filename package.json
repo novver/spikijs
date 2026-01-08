@@ -1,0 +1,43 @@
+{
+  "name": "spikijs",
+  "license": "MIT",
+  "version": "1.0.7",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/novver/spikijs.git"
+  },
+  "homepage": "https://github.com/novver/spikijs#readme",
+  "bugs": {
+    "url": "https://github.com/novver/spikijs/issues"
+  },
+  "main": "./spiki.esm.min.js",
+  "types": "./spiki.d.ts",
+  "typesVersions": {
+    "*": {
+      "*": [
+        "./spiki.d.ts"
+      ]
+    }
+  },
+  "unpkg": "./spiki.min.js",
+  "jsdelivr": "./spiki.min.js",
+  "exports": {
+    ".": {
+      "types": "./spiki.d.ts",
+      "import": {
+        "development": "./spiki.esm.js",
+        "default": "./spiki.esm.min.js"
+      },
+      "require": "./spiki.js",
+      "default": "./spiki.min.js"
+    }
+  },
+  "files": [
+    "spiki.esm.js",
+    "spiki.esm.min.js",
+    "spiki.js",
+    "spiki.min.js",
+    "spiki.d.ts"
+  ]
+}
