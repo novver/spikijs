@@ -80,7 +80,7 @@ Quick reference table summarizing all Spikijs syntaxes.
 | **`this.$root`** | Access the root elm. | `this.$root.classList.add('loaded');` |
 | **`this.$store`** | Access the global store. | `this.$store.theme` |
 | **`spiki.store()`** | Get or set global store. | `spiki.store('theme', 'dark')` |
-| **`spiki.raw(proxy)`** | Proxy to original object. | `spiki.raw(this.users)` |
+| **`spiki.raw()`** | Proxy to original object. | `spiki.raw(this.users)` |
 
 ---
 
