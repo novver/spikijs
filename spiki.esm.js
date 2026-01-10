@@ -317,6 +317,7 @@ var spiki = (() => {
 
             var attributeValue;
 
+            // s-if
             if ((attributeValue = el.getAttribute('s-if'))) {
                 var anchor = document.createTextNode('');
                 var branchCleanups = [];
@@ -350,6 +351,7 @@ var spiki = (() => {
                 }, nextTick));
             }
 
+            // s-for
             if (el.tagName === 'TEMPLATE' && (attributeValue = el.getAttribute('s-for'))) {
                 var match = attributeValue.match(loopRegex);
                 if (!match) return;
@@ -444,82 +446,92 @@ var spiki = (() => {
                 }, nextTick));
             }
 
+            // Attributes
             var attributes = el.attributes;
-            for (var i = attributes.length - 1; i >= 0; i--) {
-                ((attr) => {
-                    var name = attr.name;
-                    var value = attr.value;
-                    
-                    if (name[0] === ':') {
-                        cleanupList.push(createEffect(() => {
-                            var evaluation = evaluatePath(currentScope, value);
-                            var result = evaluation.value;
-                            var context = evaluation.context;
-                            var opName = name.slice(1) === 'class' ? 'class' : 'attr';
-                            
-                            domOperations[opName](
-                                el, 
-                                typeof result === 'function' ? result.call(context, el) : result, 
-                                name.slice(1)
-                            );
-                        }, nextTick));
+            var isInteractive = false;
+
+            if (attributes && attributes.length > 0) {
+                for (var i = attributes.length - 1; i >= 0; i--) {
+                    ((attr) => {
+                        var name = attr.name;
+                        var value = attr.value;
                         
-                    } else if (name[0] === 's' && name[1] === '-') {
-                        var directiveType = name.slice(2);
-                        
-                        if (directiveType === 'ref') {
-                            state.$refs[value] = el;
-                        } else if (directiveType === 'model') {
-                            cleanupList.push(createEffect(() => {
-                                var evaluation = evaluatePath(currentScope, value);
-                                domOperations.value(el, evaluation.value);
-                            }, nextTick));
-                            
-                            if (/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName)) {
-                                el.__scope = currentScope; 
-                                el.__modelPath = value;
-                                var eventType = (el.type === 'checkbox' || el.type === 'radio' || el.tagName === 'SELECT') 
-                                    ? 'change' 
-                                    : 'input';
-                                    
-                                if (!rootElement.__listeningEvents) rootElement.__listeningEvents = new Set();
-                                if (!rootElement.__listeningEvents.has(eventType)) {
-                                    rootElement.__listeningEvents.add(eventType);
-                                    rootElement.addEventListener(eventType, handleEvent);
-                                }
-                            }
-                        } else if (domOperations[directiveType]) {
+                        if (name[0] === ':') {
                             cleanupList.push(createEffect(() => {
                                 var evaluation = evaluatePath(currentScope, value);
                                 var result = evaluation.value;
                                 var context = evaluation.context;
-                                domOperations[directiveType](
+                                var opName = name.slice(1) === 'class' ? 'class' : 'attr';
+                                
+                                domOperations[opName](
                                     el, 
-                                    typeof result === 'function' ? result.call(context, el) : result
+                                    typeof result === 'function' ? result.call(context, el) : result, 
+                                    name.slice(1)
                                 );
                             }, nextTick));
-                        } else {
-                            el.__scope = currentScope;
-                            var meta = eventMetadataMap.get(el);
-                            if (!meta) {
-                                meta = {};
-                                eventMetadataMap.set(el, meta);
-                            }
-                            meta[directiveType] = value;
                             
-                            if (!rootElement.__listeningEvents) rootElement.__listeningEvents = new Set();
-                            if (!rootElement.__listeningEvents.has(directiveType)) {
-                                rootElement.__listeningEvents.add(directiveType);
-                                rootElement.addEventListener(directiveType, handleEvent);
+                        } else if (name[0] === 's' && name[1] === '-') {
+                            var directiveType = name.slice(2);
+                            
+                            if (directiveType === 'ref') {
+                                state.$refs[value] = el;
+                            } else if (directiveType === 'model') {
+                                isInteractive = true;
+                                cleanupList.push(createEffect(() => {
+                                    var evaluation = evaluatePath(currentScope, value);
+                                    domOperations.value(el, evaluation.value);
+                                }, nextTick));
+                                
+                                if (/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName)) {
+                                    el.__modelPath = value;
+                                    var eventType = (el.type === 'checkbox' || el.type === 'radio' || el.tagName === 'SELECT') 
+                                        ? 'change' 
+                                        : 'input';
+                                        
+                                    if (!rootElement.__listeningEvents) rootElement.__listeningEvents = new Set();
+                                    if (!rootElement.__listeningEvents.has(eventType)) {
+                                        rootElement.__listeningEvents.add(eventType);
+                                        rootElement.addEventListener(eventType, handleEvent);
+                                    }
+                                }
+                            } else if (domOperations[directiveType]) {
+                                cleanupList.push(createEffect(() => {
+                                    var evaluation = evaluatePath(currentScope, value);
+                                    var result = evaluation.value;
+                                    var context = evaluation.context;
+                                    domOperations[directiveType](
+                                        el, 
+                                        typeof result === 'function' ? result.call(context, el) : result
+                                    );
+                                }, nextTick));
+                            } else {
+                                // Events (s-click, s-custom, etc.)
+                                isInteractive = true;
+                                var meta = eventMetadataMap.get(el);
+                                if (!meta) {
+                                    meta = {};
+                                    eventMetadataMap.set(el, meta);
+                                }
+                                meta[directiveType] = value;
+                                
+                                if (!rootElement.__listeningEvents) rootElement.__listeningEvents = new Set();
+                                if (!rootElement.__listeningEvents.has(directiveType)) {
+                                    rootElement.__listeningEvents.add(directiveType);
+                                    rootElement.addEventListener(directiveType, handleEvent);
+                                }
                             }
                         }
-                    }
-                })(attributes[i]);
+                    })(attributes[i]);
+                }
             }
 
-            var child = el.firstElementChild;
+            if (isInteractive) {
+                el.__scope = currentScope;
+            }
+
+            var child = el.firstChild;
             while (child) {
-                var next = child.nextElementSibling;
+                var next = child.nextSibling;
                 walkDOM(child, currentScope, cleanupList);
                 child = next;
             }
