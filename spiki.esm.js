@@ -1,24 +1,27 @@
 var spiki = (() => {
-    // --- State & Storage ---
+    // =========================================================================
+    // 1. STATE & STORAGE
+    // =========================================================================
     var componentRegistry = Object.create(null);
     var eventMetadataMap = new WeakMap();
-    var dependencyMap = new WeakMap();
-    var proxyCache = new WeakMap();
-    var pathSplitCache = new Map();
-    var schedulerQueue = new Set();
+    var dependencyMap = new WeakMap(); // Stores dependencies: Target -> Key -> Set<Effect>
+    var proxyCache = new WeakMap();    // Prevents double-wrapping objects
+    var pathSplitCache = new Map();    // Caches "user.name" -> ["user", "name"]
+    var schedulerQueue = new Set();    // Async task queue
 
-    var loopRegex = /^\s*(.*?)\s+in\s+(.+)\s*$/;
+    var loopRegex = /^\s*(.*?)\s+in\s+(.+)\s*$/; // Regex for "item in items"
 
-    // --- Global State Variables ---
+    // Global flags
     var currentActiveEffect;
     var isFlushingQueue;
     var globalStore;
     var shouldTriggerEffects = true;
     var resolvedPromise = Promise.resolve();
 
-    // -------------------------------------------------------------------------
-    // 1. Array Interceptors
-    // -------------------------------------------------------------------------
+    // =========================================================================
+    // 2. ARRAY INSTRUMENTATION
+    // Intercepts array mutation methods to trigger reactivity
+    // =========================================================================
     var arrayInstrumentations = {};
     ['push', 'pop', 'shift', 'unshift', 'splice', 'sort', 'reverse'].forEach(methodName => {
         arrayInstrumentations[methodName] = function () {
@@ -38,10 +41,12 @@ var spiki = (() => {
         };
     });
 
-    // -------------------------------------------------------------------------
-    // 2. Helper Functions
-    // -------------------------------------------------------------------------
+    // =========================================================================
+    // 3. HELPER FUNCTIONS
+    // =========================================================================
     
+    // Creates a child scope that inherits from parent.
+    // Writes bubble up to the object that actually owns the property.
     var createScope = (parentScope) => {
         var proto = Object.create(parentScope);
         return new Proxy(proto, {
@@ -60,6 +65,7 @@ var spiki = (() => {
         });
     };
 
+    // Resolves "user.name" from the scope
     var evaluatePath = (scope, path) => {
         if (typeof path !== 'string') return { value: path, context: scope };
 
@@ -88,6 +94,7 @@ var spiki = (() => {
         return { value: currentValue, context: currentContext };
     };
 
+    // Microtask Scheduler
     var nextTick = (fn) => {
         return !schedulerQueue.has(fn) && 
                schedulerQueue.add(fn) && 
@@ -100,9 +107,9 @@ var spiki = (() => {
                });
     };
 
-    // -------------------------------------------------------------------------
-    // 3. Reactivity System
-    // -------------------------------------------------------------------------
+    // =========================================================================
+    // 4. REACTIVITY SYSTEM
+    // =========================================================================
 
     var trackDependency = (target, key) => {
         if (!currentActiveEffect) return;
@@ -134,6 +141,7 @@ var spiki = (() => {
 
     var createEffect = (fn, scheduler) => {
         var runner = () => {
+            // Clean up old dependencies before re-running
             runner.dependencies.forEach(depSet => depSet.delete(runner));
             runner.dependencies.clear();
             
@@ -148,7 +156,7 @@ var spiki = (() => {
         
         runner.dependencies = new Set();
         runner.scheduler = scheduler;
-        runner();
+        runner(); // Run immediately
         
         return () => {
             runner.dependencies.forEach(depSet => depSet.delete(runner));
@@ -175,6 +183,7 @@ var spiki = (() => {
                 trackDependency(target, key);
                 
                 var result = Reflect.get(target, key, receiver);
+                // Deep reactivity
                 return result && typeof result === 'object' && !(result instanceof Node) 
                     ? makeReactive(result) 
                     : result;
@@ -214,9 +223,9 @@ var spiki = (() => {
 
     globalStore = makeReactive({});
 
-    // -------------------------------------------------------------------------
-    // 4. DOM Operations
-    // -------------------------------------------------------------------------
+    // =========================================================================
+    // 5. DOM OPERATIONS
+    // =========================================================================
     var domOperations = {
         text: (el, value) => { 
             el.textContent = (value !== null && value !== undefined) ? value : ''; 
@@ -255,9 +264,9 @@ var spiki = (() => {
         destroy: () => { }
     };
 
-    // -------------------------------------------------------------------------
-    // 5. Engine / Mounting Logic
-    // -------------------------------------------------------------------------
+    // =========================================================================
+    // 6. MOUNTING & ENGINE
+    // =========================================================================
     var mountComponent = (rootElement) => {
         if (rootElement.__isMounted) return;
         rootElement.__isMounted = 1;
@@ -273,28 +282,34 @@ var spiki = (() => {
 
         var cleanupCallbacks = [];
 
+        // --- Global Event Delegation Handler ---
         var handleEvent = (e) => {
             var target = e.target;
             
+            // Handle s-model updates
             if (target.__modelPath && (e.type === 'input' || e.type === 'change')) {
                 var path = target.__modelPath;
+                // Use tagged scope if available, else root state
+                var scope = target.__scope || state;
                 var value = target.type === 'checkbox' ? target.checked : target.value;
-                var evaluation = evaluatePath(target.__scope || state, path);
+                var evaluation = evaluatePath(scope, path);
                 var parentObject = evaluation.context;
 
                 if (path.indexOf('.') === -1) {
-                    (target.__scope || state)[path] = value;
+                    scope[path] = value;
                 } else if (parentObject) {
                     var parts = path.split('.');
                     parentObject[parts[parts.length - 1]] = value;
                 }
             }
 
+            // Handle standard events (s-click, etc.)
             var handlerName;
             while (target && target !== rootElement.parentNode) {
                 var meta = eventMetadataMap.get(target);
                 if (meta && (handlerName = meta[e.type])) {
-                    var evalResult = evaluatePath(target.__scope || state, handlerName);
+                    var targetScope = target.__scope || state;
+                    var evalResult = evaluatePath(targetScope, handlerName);
                     var handlerFn = evalResult.value;
                     var handlerContext = evalResult.context;
                     
@@ -306,18 +321,21 @@ var spiki = (() => {
             }
         };
 
+        // --- Core Recursive Walker ---
         var walkDOM = (el, currentScope, cleanupList) => {
+            // 1. Fast Reject: Text nodes, Comments, or s-ignore
             if (el.nodeType !== 1 || el.hasAttribute('s-ignore')) return;
 
+            // 2. Component Boundary Check
             if (el !== rootElement && el.hasAttribute('s-data')) {
                 var childComponent = mountComponent(el);
                 if (childComponent) cleanupList.push(childComponent.unmount);
-                return;
+                return; // Stop recursion here, child handles itself
             }
 
             var attributeValue;
 
-            // s-if
+            // 3. Structural Directive: s-if
             if ((attributeValue = el.getAttribute('s-if'))) {
                 var anchor = document.createTextNode('');
                 var branchCleanups = [];
@@ -339,6 +357,7 @@ var spiki = (() => {
                         if (!activeNode) {
                             activeNode = el.cloneNode(true);
                             activeNode.removeAttribute('s-if');
+                            // Recurse into the new branch
                             walkDOM(activeNode, currentScope, branchCleanups);
                             anchor.parentNode.insertBefore(activeNode, anchor);
                         }
@@ -351,7 +370,7 @@ var spiki = (() => {
                 }, nextTick));
             }
 
-            // s-for
+            // 4. Structural Directive: s-for
             if (el.tagName === 'TEMPLATE' && (attributeValue = el.getAttribute('s-for'))) {
                 var match = attributeValue.match(loopRegex);
                 if (!match) return;
@@ -418,6 +437,7 @@ var spiki = (() => {
                             while (childNode) {
                                 rowNodes.push(childNode);
                                 var nextSibling = childNode.nextSibling;
+                                // Recursive walk for new DOM nodes
                                 walkDOM(childNode, rowScope, rowCleanups);
                                 childNode = nextSibling;
                             }
@@ -446,11 +466,12 @@ var spiki = (() => {
                 }, nextTick));
             }
 
-            // Attributes
+            // 5. Attribute Binding & Interactivity Check
             var attributes = el.attributes;
-            var isInteractive = false;
+            var isInteractive = false; 
 
             if (attributes && attributes.length > 0) {
+                // Reverse loop for safety
                 for (var i = attributes.length - 1; i >= 0; i--) {
                     ((attr) => {
                         var name = attr.name;
@@ -476,7 +497,7 @@ var spiki = (() => {
                             if (directiveType === 'ref') {
                                 state.$refs[value] = el;
                             } else if (directiveType === 'model') {
-                                isInteractive = true;
+                                isInteractive = true; // Flag for scope attachment
                                 cleanupList.push(createEffect(() => {
                                     var evaluation = evaluatePath(currentScope, value);
                                     domOperations.value(el, evaluation.value);
@@ -505,8 +526,8 @@ var spiki = (() => {
                                     );
                                 }, nextTick));
                             } else {
-                                // Events (s-click, s-custom, etc.)
-                                isInteractive = true;
+                                // Event Handlers
+                                isInteractive = true; // Flag for scope attachment
                                 var meta = eventMetadataMap.get(el);
                                 if (!meta) {
                                     meta = {};
@@ -525,10 +546,14 @@ var spiki = (() => {
                 }
             }
 
+            // 6. Selective Scope Attachment
+            // Only attach scope to DOM elements that actually need it for events/models.
+            // This saves memory on static elements.
             if (isInteractive) {
                 el.__scope = currentScope;
             }
 
+            // 7. Recursive Traversal (Optimized Native Loop)
             var child = el.firstChild;
             while (child) {
                 var next = child.nextSibling;
@@ -554,6 +579,9 @@ var spiki = (() => {
         };
     };
 
+    // =========================================================================
+    // 7. PUBLIC API
+    // =========================================================================
     return {
         data: (name, factoryFn) => { 
             componentRegistry[name] = factoryFn; 
