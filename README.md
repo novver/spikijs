@@ -256,8 +256,7 @@ spiki.data('attrApp', () => ({
 
 ### `:class`
 Dynamically toggles classes.
-*   Spiki expects a string of classes.
-*   To **remove** a class, prefix it with `!`.
+*   Return value as object
 
 ```html
 <div s-data="classApp">
@@ -278,7 +277,7 @@ spiki.data('classApp', () => ({
     
     // Use a getter to return the logic
     get statusClass() {
-        return this.isActive ? 'active' : '!active';
+        return {'active' : this.isActive};
     }
 }));
 ```
