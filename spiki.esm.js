@@ -131,14 +131,15 @@ var spiki = (() => {
                 var isArray = Array.isArray(target);
                 var hadKey = isArray ? Number(key) < target.length : Object.prototype.hasOwnProperty.call(target, key);
                 
-                // Scope Bubbling: Walk up the prototype chain to find true owner
                 if (!isArray && !hadKey) {
-                    var cursor = target;
-                    while (cursor && !Object.prototype.hasOwnProperty.call(cursor, key)) {
+                    var cursor = Object.getPrototypeOf(target);
+                    while (cursor && cursor !== Object.prototype) {
+                        if (Object.prototype.hasOwnProperty.call(cursor, key)) {
+                            var res = Reflect.set(cursor, key, value);
+                            if (shouldTriggerEffects && value !== old) triggerDependency(target, key);
+                            return res;
+                        }
                         cursor = Object.getPrototypeOf(cursor);
-                    }
-                    if (cursor && cursor !== Object.prototype) {
-                        return Reflect.set(cursor, key, value);
                     }
                 }
 
@@ -175,14 +176,20 @@ var spiki = (() => {
     // 4. HELPERS & DOM
     // =========================================================================
     var evaluatePath = (scope, path) => {
-        if (path.indexOf('.') === -1) return { value: scope[path], context: scope };
+        if (path.indexOf('.') === -1) {
+            if (scope[path] === undefined) console.warn('Property undefined: ' + path);
+            return { value: scope[path], context: scope };
+        }
 
         var parts = path.split('.');
         var val = scope;
         var ctx = scope;
         var len = parts.length;
         for (var i = 0; i < len; i++) {
-            if (val == null) return { value: undefined, context: null };
+            if (val == null) {
+                console.warn('Property undefined: ' + path);
+                return { value: undefined, context: null };
+            }
             ctx = val;
             val = val[parts[i]];
         }
@@ -228,7 +235,14 @@ var spiki = (() => {
                 if (el.checked !== v) el.checked = v;
             } else {
                 val = val == null ? '' : val;
-                if (el.value != val) el.value = val;
+                if (el.value != val) {
+                    var start = el.selectionStart;
+                    var end = el.selectionEnd;
+                    el.value = val;
+                    if (document.activeElement === el) {
+                        try { el.setSelectionRange(start, end); } catch(e) {}
+                    }
+                }
             }
         },
         attr: (el, val, attr) => {
@@ -240,7 +254,10 @@ var spiki = (() => {
             }
         },
         class: (el, val) => {
-            if (val && typeof val === 'object') {
+            // [UPDATE 1] Support String
+            if (typeof val === 'string') {
+                if (el.className !== val) el.className = val;
+            } else if (val && typeof val === 'object') {
                 for (var cls in val) {
                     if (val[cls]) {
                         if (!el.classList.contains(cls)) el.classList.add(cls);
