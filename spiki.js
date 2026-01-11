@@ -3,40 +3,28 @@
 
 var spiki = (() => {
     // =========================================================================
-    // 1. STATE & STORAGE
+    // 1. STATE & UTILS
     // =========================================================================
     var componentRegistry = Object.create(null);
-    var eventMetadataMap = new WeakMap();
-    var dependencyMap = new WeakMap(); // Stores dependencies: Target -> Key -> Set<Effect>
-    var proxyCache = new WeakMap();    // Prevents double-wrapping objects
-    var pathSplitCache = new Map();    // Caches "user.name" -> ["user", "name"]
-    var schedulerQueue = new Set();    // Async task queue
-
-    var loopRegex = /^\s*(.*?)\s+in\s+(.+)\s*$/; // Regex for "item in items"
-
-    // Global flags
-    var currentActiveEffect;
-    var isFlushingQueue;
+    var schedulerQueue = [];
+    var isFlushingQueue = false;
+    var currentActiveEffect = null;
     var globalStore;
     var shouldTriggerEffects = true;
     var resolvedPromise = Promise.resolve();
+    
+    // Regex for "item in items"
+    var loopRegex = /^\s*(.*?)\s+in\s+(.+)\s*$/;
 
     // =========================================================================
-    // 2. ARRAY INSTRUMENTATION
-    // Intercepts array mutation methods to trigger reactivity
+    // 2. ARRAY INSTRUMENTATION (Zero Allocation Forwarding)
     // =========================================================================
     var arrayInstrumentations = {};
-    ['push', 'pop', 'shift', 'unshift', 'splice', 'sort', 'reverse'].forEach(methodName => {
-        arrayInstrumentations[methodName] = function () {
-            var args = [];
-            for (var i = 0; i < arguments.length; i++) {
-                args[i] = arguments[i];
-            }
-            
+    ['push', 'pop', 'shift', 'unshift', 'splice', 'sort', 'reverse'].forEach(method => {
+        arrayInstrumentations[method] = function () {
             shouldTriggerEffects = false;
             try {
-                var result = Array.prototype[methodName].apply(this, args);
-                return result;
+                return Array.prototype[method].apply(this, arguments);
             } finally {
                 shouldTriggerEffects = true;
                 triggerDependency(this, 'length');
@@ -45,518 +33,459 @@ var spiki = (() => {
     });
 
     // =========================================================================
-    // 3. HELPER FUNCTIONS
+    // 3. REACTIVITY SYSTEM
     // =========================================================================
-    
-    // Creates a child scope that inherits from parent.
-    // Writes bubble up to the object that actually owns the property.
-    var createScope = (parentScope) => {
-        var proto = Object.create(parentScope);
-        return new Proxy(proto, {
-            set: (target, key, value, receiver) => {
-                if (target.hasOwnProperty(key)) {
-                    return Reflect.set(target, key, value, receiver);
-                }
-                
-                var cursor = target;
-                while (cursor && !Object.prototype.hasOwnProperty.call(cursor, key)) {
-                    cursor = Object.getPrototypeOf(cursor);
-                }
-                
-                return Reflect.set(cursor || target, key, value);
-            }
-        });
-    };
-
-    // Resolves "user.name" from the scope
-    var evaluatePath = (scope, path) => {
-        if (typeof path !== 'string') return { value: path, context: scope };
-
-        if (path.indexOf('.') === -1) {
-            return { value: scope ? scope[path] : undefined, context: scope };
-        }
-
-        var parts = pathSplitCache.get(path);
-        if (!parts) {
-            if (pathSplitCache.size > 1000) pathSplitCache.clear();
-            parts = path.split('.');
-            pathSplitCache.set(path, parts);
-        }
-
-        var currentValue = scope;
-        var currentContext = scope;
-        
-        for (var i = 0; i < parts.length; i++) {
-            var part = parts[i];
-            if (currentValue == null) {
-                return { value: currentValue, context: null };
-            }
-            currentContext = currentValue;
-            currentValue = currentValue[part];
-        }
-        return { value: currentValue, context: currentContext };
-    };
-
-    // Microtask Scheduler
-    var nextTick = (fn) => {
-        return !schedulerQueue.has(fn) && 
-               schedulerQueue.add(fn) && 
-               !isFlushingQueue && 
-               (isFlushingQueue = true) &&
-               resolvedPromise.then(() => {
-                   schedulerQueue.forEach(job => job());
-                   schedulerQueue.clear();
-                   isFlushingQueue = false;
-               });
-    };
-
-    // =========================================================================
-    // 4. REACTIVITY SYSTEM
-    // =========================================================================
-
     var trackDependency = (target, key) => {
-        if (!currentActiveEffect) return;
-        
-        var depsMap = dependencyMap.get(target);
-        if (!depsMap) {
-            depsMap = new Map();
-            dependencyMap.set(target, depsMap);
+        if (currentActiveEffect) {
+            var deps = target.__deps;
+            if (!deps) {
+                // Define hidden property once
+                Object.defineProperty(target, '__deps', {
+                    value: Object.create(null), writable: true, configurable: true 
+                });
+                deps = target.__deps;
+            }
+
+            var depList = deps[key];
+            if (!depList) deps[key] = depList = [];
+            
+            if (depList.indexOf(currentActiveEffect) === -1) {
+                depList.push(currentActiveEffect);
+                currentActiveEffect.deps.push(depList);
+            }
         }
-        
-        var depSet = depsMap.get(key);
-        if (!depSet) {
-            depSet = new Set();
-            depsMap.set(key, depSet);
-        }
-        
-        depSet.add(currentActiveEffect);
-        currentActiveEffect.dependencies.add(depSet);
     };
 
     var triggerDependency = (target, key) => {
-        var depsMap, depSet;
-        if (shouldTriggerEffects && (depsMap = dependencyMap.get(target)) && (depSet = depsMap.get(key))) {
-            depSet.forEach(effectFn => {
-                effectFn.scheduler ? effectFn.scheduler(effectFn) : effectFn();
-            });
+        if (shouldTriggerEffects && target.__deps) {
+            var effects = target.__deps[key];
+            if (effects) {
+                // Snapshot to prevent infinite loops during mutation
+                var queue = effects.slice(); 
+                var len = queue.length;
+                for (var i = 0; i < len; i++) {
+                    var effect = queue[i];
+                    effect.scheduler ? effect.scheduler(effect) : effect();
+                }
+            }
         }
     };
 
     var createEffect = (fn, scheduler) => {
         var runner = () => {
-            // Clean up old dependencies before re-running
-            runner.dependencies.forEach(depSet => depSet.delete(runner));
-            runner.dependencies.clear();
-            
-            var previousEffect = currentActiveEffect;
-            currentActiveEffect = runner;
-            try { 
-                fn(); 
-            } finally { 
-                currentActiveEffect = previousEffect; 
+            // Cleanup previous dependencies using O(1) Swap-and-Pop
+            if (runner.deps) {
+                var len = runner.deps.length;
+                for (var i = 0; i < len; i++) {
+                    var list = runner.deps[i];
+                    var idx = list.indexOf(runner);
+                    if (idx !== -1) {
+                        var end = list.length - 1;
+                        if (idx !== end) list[idx] = list[end]; // Swap with last
+                        list.pop(); // Remove last
+                    }
+                }
+                runner.deps.length = 0;
+            } else {
+                runner.deps = [];
             }
+            
+            var prev = currentActiveEffect;
+            currentActiveEffect = runner;
+            try { fn(); } finally { currentActiveEffect = prev; }
         };
         
-        runner.dependencies = new Set();
         runner.scheduler = scheduler;
-        runner(); // Run immediately
+        runner();
         
         return () => {
-            runner.dependencies.forEach(depSet => depSet.delete(runner));
-            runner.dependencies.clear();
-            schedulerQueue.delete(runner);
+            if (runner.deps) {
+                var len = runner.deps.length;
+                for (var i = 0; i < len; i++) {
+                    var list = runner.deps[i];
+                    var idx = list.indexOf(runner);
+                    if (idx !== -1) {
+                        var end = list.length - 1;
+                        if (idx !== end) list[idx] = list[end];
+                        list.pop();
+                    }
+                }
+            }
         };
     };
 
     var makeReactive = (obj) => {
         if (!obj || typeof obj !== 'object' || obj.__isProxy || obj instanceof Node) return obj;
-        
-        var existingProxy = proxyCache.get(obj);
-        if (existingProxy) return existingProxy;
+        if (obj.__proxy) return obj.__proxy;
 
         var proxy = new Proxy(obj, {
             get: (target, key, receiver) => {
                 if (key === '__raw') return target;
                 if (key === '__isProxy') return true;
+                if (key === '__deps') return target.__deps;
+                if (Array.isArray(target) && arrayInstrumentations.hasOwnProperty(key)) return arrayInstrumentations[key];
 
-                if (Array.isArray(target) && arrayInstrumentations.hasOwnProperty(key)) {
-                    return arrayInstrumentations[key];
-                }
-                
                 trackDependency(target, key);
-                
-                var result = Reflect.get(target, key, receiver);
-                // Deep reactivity
-                return result && typeof result === 'object' && !(result instanceof Node) 
-                    ? makeReactive(result) 
-                    : result;
+                var res = Reflect.get(target, key, receiver);
+                return (res && typeof res === 'object' && !(res instanceof Node)) ? makeReactive(res) : res;
             },
             set: (target, key, value, receiver) => {
-                var oldValue = target[key];
-                var hadKey = Array.isArray(target) 
-                    ? Number(key) < target.length 
-                    : Object.prototype.hasOwnProperty.call(target, key);
+                var old = target[key];
+                var isArray = Array.isArray(target);
+                var hadKey = isArray ? Number(key) < target.length : Object.prototype.hasOwnProperty.call(target, key);
                 
-                var result = Reflect.set(target, key, value, receiver);
+                // Scope Bubbling: Walk up the prototype chain to find true owner
+                if (!isArray && !hadKey) {
+                    var cursor = target;
+                    while (cursor && !Object.prototype.hasOwnProperty.call(cursor, key)) {
+                        cursor = Object.getPrototypeOf(cursor);
+                    }
+                    if (cursor && cursor !== Object.prototype) {
+                        return Reflect.set(cursor, key, value);
+                    }
+                }
+
+                var res = Reflect.set(target, key, value, receiver);
                 
                 if (shouldTriggerEffects) {
                     if (!hadKey) {
                         triggerDependency(target, key);
-                        if (Array.isArray(target)) triggerDependency(target, 'length');
-                    } else if (oldValue !== value) {
+                        if (isArray) triggerDependency(target, 'length');
+                    } else if (value !== old) {
                         triggerDependency(target, key);
                     }
                 }
-                return result;
+                return res;
             },
             deleteProperty: (target, key) => {
                 var hadKey = Object.prototype.hasOwnProperty.call(target, key);
-                var result = Reflect.deleteProperty(target, key);
-                if (result && hadKey) {
+                var res = Reflect.deleteProperty(target, key);
+                if (res && hadKey) {
                     triggerDependency(target, key);
                     if (Array.isArray(target)) triggerDependency(target, 'length');
                 }
-                return result;
+                return res;
             }
         });
         
-        proxyCache.set(obj, proxy);
+        Object.defineProperty(obj, '__proxy', { value: proxy, enumerable: false });
         return proxy;
     };
 
     globalStore = makeReactive({});
 
     // =========================================================================
-    // 5. DOM OPERATIONS
+    // 4. HELPERS & DOM
     // =========================================================================
-    var domOperations = {
-        text: (el, value) => { 
-            el.textContent = (value !== null && value !== undefined) ? value : ''; 
-        },
-        html: (el, value) => { 
-            el.innerHTML = (value !== null && value !== undefined) ? value : ''; 
-        },
-        value: (el, value) => {
-            if (el.type === 'checkbox') {
-                el.checked = !!value;
-            } else if (el.type === 'radio' && el.name) {
-                el.checked = el.value == value;
-            } else {
-                if (el.value != value) {
-                    el.value = (value !== null && value !== undefined) ? value : '';
-                }
-            }
-        },
-        attr: (el, value, attributeName) => {
-            (value == null || value === false) 
-                ? el.removeAttribute(attributeName) 
-                : el.setAttribute(attributeName, value === true ? '' : value);
-        },
-        class: (el, value) => {
-            if (typeof value === 'string') {
-                value.split(/\s+/).forEach(cls => {
-                    if (cls) {
-                        var isNegative = cls[0] === '!';
-                        var className = isNegative ? cls.slice(1) : cls;
-                        el.classList[isNegative ? 'remove' : 'add'](className);
+    var evaluatePath = (scope, path) => {
+        if (path.indexOf('.') === -1) return { value: scope[path], context: scope };
+
+        var parts = path.split('.');
+        var val = scope;
+        var ctx = scope;
+        var len = parts.length;
+        for (var i = 0; i < len; i++) {
+            if (val == null) return { value: undefined, context: null };
+            ctx = val;
+            val = val[parts[i]];
+        }
+        return { value: val, context: ctx };
+    };
+
+    var nextTick = (fn) => {
+        if (!fn.__queued) {
+            fn.__queued = true;
+            schedulerQueue.push(fn);
+            if (!isFlushingQueue) {
+                isFlushingQueue = true;
+                resolvedPromise.then(() => {
+                    var len = schedulerQueue.length;
+                    for (var i = 0; i < len; i++) {
+                        var job = schedulerQueue[i];
+                        job.__queued = false;
+                        job();
                     }
+                    schedulerQueue.length = 0;
+                    isFlushingQueue = false;
                 });
             }
+        }
+    };
+
+    // Dirty checking included to prevent unnecessary reflows
+    var domOperations = {
+        text: (el, val) => { 
+            val = val == null ? '' : val;
+            if (el.textContent !== val) el.textContent = val; 
         },
-        init: () => { },
-        destroy: () => { }
+        html: (el, val) => { 
+            val = val == null ? '' : val;
+            if (el.innerHTML !== val) el.innerHTML = val; 
+        },
+        value: (el, val) => {
+            if (el.type === 'checkbox') {
+                var v = !!val;
+                if (el.checked !== v) el.checked = v;
+            } else if (el.type === 'radio') {
+                var v = el.value == val;
+                if (el.checked !== v) el.checked = v;
+            } else {
+                val = val == null ? '' : val;
+                if (el.value != val) el.value = val;
+            }
+        },
+        attr: (el, val, attr) => {
+            if (val == null || val === false) {
+                if (el.hasAttribute(attr)) el.removeAttribute(attr);
+            } else {
+                val = val === true ? '' : String(val);
+                if (el.getAttribute(attr) !== val) el.setAttribute(attr, val);
+            }
+        },
+        class: (el, val) => {
+            if (val && typeof val === 'object') {
+                for (var cls in val) {
+                    if (val[cls]) {
+                        if (!el.classList.contains(cls)) el.classList.add(cls);
+                    } else {
+                        if (el.classList.contains(cls)) el.classList.remove(cls);
+                    }
+                }
+            }
+        }
     };
 
     // =========================================================================
-    // 6. MOUNTING & ENGINE
+    // 5. ENGINE
     // =========================================================================
-    var mountComponent = (rootElement) => {
+    var mountComponent = (rootElement, parentScope) => {
         if (rootElement.__isMounted) return;
-        rootElement.__isMounted = 1;
+        rootElement.__isMounted = true;
 
-        var componentName = rootElement.getAttribute('s-data');
-        var componentFactory = componentRegistry[componentName];
-        if (!componentFactory) return;
+        var name = rootElement.getAttribute('s-data');
+        var factory = componentRegistry[name];
+        if (!factory) return;
 
-        var state = makeReactive(componentFactory());
+        // Data & Prototype Inheritance
+        var data = factory();
+        if (parentScope) Object.setPrototypeOf(data, parentScope);
+        
+        var state = makeReactive(data);
         state.$refs = {};
         state.$root = rootElement;
         state.$store = globalStore;
+        if (parentScope) state.$parent = parentScope;
 
         var cleanupCallbacks = [];
+        var activeListeners = Object.create(null);
 
-        // --- Global Event Delegation Handler ---
+        // Global Event Delegation (One listener per event type per component)
         var handleEvent = (e) => {
             var target = e.target;
             
-            // Handle s-model updates
+            // s-model
             if (target.__modelPath && (e.type === 'input' || e.type === 'change')) {
-                var path = target.__modelPath;
-                // Use tagged scope if available, else root state
                 var scope = target.__scope || state;
-                var value = target.type === 'checkbox' ? target.checked : target.value;
-                var evaluation = evaluatePath(scope, path);
-                var parentObject = evaluation.context;
-
-                if (path.indexOf('.') === -1) {
-                    scope[path] = value;
-                } else if (parentObject) {
-                    var parts = path.split('.');
-                    parentObject[parts[parts.length - 1]] = value;
+                var val = target.type === 'checkbox' ? target.checked : target.value;
+                var evalRes = evaluatePath(scope, target.__modelPath);
+                
+                if (evalRes.context) {
+                    if (target.__modelPath.indexOf('.') === -1) scope[target.__modelPath] = val;
+                    else evalRes.context[target.__modelPath.split('.').pop()] = val;
                 }
             }
 
-            // Handle standard events (s-click, etc.)
-            var handlerName;
+            // s-[event]
+            var hName;
             while (target && target !== rootElement.parentNode) {
-                var meta = eventMetadataMap.get(target);
-                if (meta && (handlerName = meta[e.type])) {
-                    var targetScope = target.__scope || state;
-                    var evalResult = evaluatePath(targetScope, handlerName);
-                    var handlerFn = evalResult.value;
-                    var handlerContext = evalResult.context;
-                    
-                    if (typeof handlerFn === 'function') {
-                        handlerFn.call(handlerContext, e);
-                    }
+                if (target.__handlers && (hName = target.__handlers[e.type])) {
+                    var tScope = target.__scope || state;
+                    var res = evaluatePath(tScope, hName);
+                    if (typeof res.value === 'function') res.value.call(res.context, e);
                 }
                 target = target.parentNode;
             }
         };
 
-        // --- Core Recursive Walker ---
+        var addListener = (type) => {
+            if (!activeListeners[type]) {
+                activeListeners[type] = true;
+                rootElement.addEventListener(type, handleEvent);
+            }
+        };
+
         var walkDOM = (el, currentScope, cleanupList) => {
-            // 1. Fast Reject: Text nodes, Comments, or s-ignore
             if (el.nodeType !== 1 || el.hasAttribute('s-ignore')) return;
 
-            // 2. Component Boundary Check
+            // Component boundary: recurse with current scope as parent
             if (el !== rootElement && el.hasAttribute('s-data')) {
-                var childComponent = mountComponent(el);
-                if (childComponent) cleanupList.push(childComponent.unmount);
-                return; // Stop recursion here, child handles itself
+                var child = mountComponent(el, currentScope);
+                if (child) cleanupList.push(child.unmount);
+                return;
             }
 
-            var attributeValue;
+            var ifAttr = el.getAttribute('s-if');
+            var forAttr = !ifAttr && el.tagName === 'TEMPLATE' ? el.getAttribute('s-for') : null;
 
-            // 3. Structural Directive: s-if
-            if ((attributeValue = el.getAttribute('s-if'))) {
+            // --- s-if ---
+            if (ifAttr) {
                 var anchor = document.createTextNode('');
-                var branchCleanups = [];
                 el.replaceWith(anchor);
-                var activeNode;
-
-                cleanupList.push(() => { 
-                    branchCleanups.forEach(cb => cb()); 
-                });
+                var activeEl = null;
+                var branchCleanups = [];
+                cleanupList.push(() => { branchCleanups.forEach(cb => cb()); });
 
                 return cleanupList.push(createEffect(() => {
-                    var evaluation = evaluatePath(currentScope, attributeValue);
-                    var result = evaluation.value;
-                    var context = evaluation.context;
-                    
-                    var isTruthy = typeof result === 'function' ? result.call(context, el) : result;
-
-                    if (isTruthy) {
-                        if (!activeNode) {
-                            activeNode = el.cloneNode(true);
-                            activeNode.removeAttribute('s-if');
-                            // Recurse into the new branch
-                            walkDOM(activeNode, currentScope, branchCleanups);
-                            anchor.parentNode.insertBefore(activeNode, anchor);
+                    var val = evaluatePath(currentScope, ifAttr).value;
+                    if (val) {
+                        if (!activeEl) {
+                            activeEl = el.cloneNode(true);
+                            activeEl.removeAttribute('s-if');
+                            walkDOM(activeEl, currentScope, branchCleanups);
+                            anchor.parentNode.insertBefore(activeEl, anchor);
                         }
-                    } else if (activeNode) {
+                    } else if (activeEl) {
                         branchCleanups.forEach(cb => cb());
                         branchCleanups.length = 0;
-                        activeNode.remove();
-                        activeNode = null;
+                        activeEl.remove();
+                        activeEl = null;
                     }
                 }, nextTick));
             }
 
-            // 4. Structural Directive: s-for
-            if (el.tagName === 'TEMPLATE' && (attributeValue = el.getAttribute('s-for'))) {
-                var match = attributeValue.match(loopRegex);
+            // --- s-for ---
+            if (forAttr) {
+                var match = forAttr.match(loopRegex);
                 if (!match) return;
-                
-                var leftHandSide = match[1].replace(/[()]/g, '');
-                var listKey = match[2];
-                var splitLhs = leftHandSide.split(',');
-                var itemAlias = splitLhs[0].trim();
-                var indexAlias = splitLhs[1] ? splitLhs[1].trim() : null;
 
-                var keyAttribute = el.getAttribute('s-key');
-                var anchorForLoop = document.createTextNode('');
-                el.replaceWith(anchorForLoop);
+                var lhs = match[1].replace(/[()]/g, '').split(',');
+                var alias = lhs[0].trim();
+                var idxAlias = lhs[1] ? lhs[1].trim() : null;
+                var listKey = match[2].trim();
+                var keyAttr = el.getAttribute('s-key');
                 
-                var nodePool = new Map();
+                var anchor = document.createTextNode('');
+                el.replaceWith(anchor);
+                var nodePool = Object.create(null);
 
                 cleanupList.push(() => {
-                    nodePool.forEach(row => {
-                        row.cleanups.forEach(cb => cb());
-                    });
+                    for(var k in nodePool) nodePool[k].cleanups.forEach(cb => cb());
                 });
 
                 return cleanupList.push(createEffect(() => {
-                    var evaluation = evaluatePath(currentScope, listKey);
-                    var rawItems = evaluation.value;
-                    var items = rawItems;
-                    
+                    var items = evaluatePath(currentScope, listKey).value;
                     if (Array.isArray(items)) trackDependency(items, 'length');
 
-                    var domCursor = anchorForLoop;
-                    var iterable = Array.isArray(items) ? items : items ? Object.keys(items) : [];
-                    var nextNodePool = new Map();
+                    var fragment = document.createDocumentFragment();
+                    var nextPool = Object.create(null);
+                    var iterable = items || [];
+                    var isArr = Array.isArray(iterable);
+                    var keys = isArr ? iterable : Object.keys(iterable);
+                    var cursor = anchor;
+                    var len = isArr ? iterable.length : keys.length;
 
-                    iterable.forEach((rawItem, index) => {
-                        var key = Array.isArray(items) ? index : rawItem;
-                        var itemValue = Array.isArray(items) ? rawItem : items[rawItem];
-
-                        var rowUniqueKey;
-                        if (keyAttribute && itemValue) rowUniqueKey = itemValue[keyAttribute];
-                        else rowUniqueKey = (typeof itemValue === 'object' && itemValue) 
-                            ? itemValue 
-                            : key + '_' + itemValue;
-
-                        var row = nodePool.get(rowUniqueKey);
-
-                        var defineAlias = (targetObj) => {
-                            Object.defineProperty(targetObj, itemAlias, {
-                                configurable: true, enumerable: true,
-                                get: () => items[key],
-                                set: (v) => { items[key] = v; }
-                            });
-                        };
-
-                        if (!row) {
-                            var clone = el.content.cloneNode(true);
-                            var rowScope = createScope(currentScope);
-                            var rowCleanups = [];
-
-                            defineAlias(rowScope);
-                            if (indexAlias) rowScope[indexAlias] = key;
-
-                            var rowNodes = [];
-                            var childNode = clone.firstChild;
-                            while (childNode) {
-                                rowNodes.push(childNode);
-                                var nextSibling = childNode.nextSibling;
-                                // Recursive walk for new DOM nodes
-                                walkDOM(childNode, rowScope, rowCleanups);
-                                childNode = nextSibling;
-                            }
-                            row = { nodes: rowNodes, scope: rowScope, cleanups: rowCleanups };
-                        } else {
-                            defineAlias(row.scope);
-                            if (indexAlias) row.scope[indexAlias] = key;
-                        }
-
-                        if (row.nodes[0] !== domCursor.nextSibling) {
-                            var fragment = document.createDocumentFragment();
-                            row.nodes.forEach(n => fragment.appendChild(n));
-                            domCursor.parentNode.insertBefore(fragment, domCursor.nextSibling);
-                        }
+                    for (var i = 0; i < len; i++) {
+                        var key = isArr ? i : keys[i];
+                        var item = isArr ? iterable[i] : iterable[key];
+                        var unique = keyAttr && item ? item[keyAttr] : (isArr ? key + '_' + (typeof item==='object'? 'o':item) : key);
                         
-                        domCursor = row.nodes[row.nodes.length - 1];
-                        nextNodePool.set(rowUniqueKey, row);
-                        nodePool.delete(rowUniqueKey);
-                    });
+                        var row = nodePool[unique];
+                        if (row) {
+                            row.scope[alias] = item;
+                            if (idxAlias) row.scope[idxAlias] = key;
+                        } else {
+                            var clone = el.content.cloneNode(true);
+                            // Inherit Scope via Prototype
+                            var rScopeRaw = Object.create(currentScope);
+                            rScopeRaw[alias] = item;
+                            if (idxAlias) rScopeRaw[idxAlias] = key;
+                            
+                            var rScope = makeReactive(rScopeRaw);
+                            var rNodes = Array.prototype.slice.call(clone.childNodes);
+                            var rCleanups = [];
+                            for(var n=0; n<rNodes.length; n++) walkDOM(rNodes[n], rScope, rCleanups);
+                            row = { nodes: rNodes, scope: rScope, cleanups: rCleanups };
+                        }
 
-                    nodePool.forEach(row => {
-                        row.cleanups.forEach(cb => cb());
-                        row.nodes.forEach(n => n.remove());
-                    });
-                    nodePool = nextNodePool;
+                        if (row.nodes[0] !== cursor.nextSibling) {
+                            for(var n=0; n<row.nodes.length; n++) fragment.appendChild(row.nodes[n]);
+                            cursor.parentNode.insertBefore(fragment, cursor.nextSibling);
+                        }
+                        cursor = row.nodes[row.nodes.length - 1];
+                        nextPool[unique] = row;
+                        if(nodePool[unique]) delete nodePool[unique];
+                    }
+
+                    for(var k in nodePool) {
+                        var r = nodePool[k];
+                        r.cleanups.forEach(cb => cb());
+                        for(var n=0; n<r.nodes.length; n++) r.nodes[n].remove();
+                    }
+                    nodePool = nextPool;
                 }, nextTick));
             }
 
-            // 5. Attribute Binding & Interactivity Check
-            var attributes = el.attributes;
-            var isInteractive = false; 
+            // --- Attribute Bindings (Lazy & Merged) ---
+            if (el.hasAttributes()) {
+                var bindings = null;
+                var isInteractive = false;
+                var attrs = el.attributes;
+                var len = attrs.length;
+                
+                for (var i = 0; i < len; i++) {
+                    var name = attrs[i].name;
+                    var val = attrs[i].value;
 
-            if (attributes && attributes.length > 0) {
-                // Reverse loop for safety
-                for (var i = attributes.length - 1; i >= 0; i--) {
-                    ((attr) => {
-                        var name = attr.name;
-                        var value = attr.value;
-                        
-                        if (name[0] === ':') {
-                            cleanupList.push(createEffect(() => {
-                                var evaluation = evaluatePath(currentScope, value);
-                                var result = evaluation.value;
-                                var context = evaluation.context;
-                                var opName = name.slice(1) === 'class' ? 'class' : 'attr';
-                                
-                                domOperations[opName](
-                                    el, 
-                                    typeof result === 'function' ? result.call(context, el) : result, 
-                                    name.slice(1)
-                                );
-                            }, nextTick));
+                    if (name[0] === ':') {
+                        if (!bindings) bindings = [];
+                        bindings.push({ type: 'attr', name: name.slice(1), path: val });
+                    } else if (name[0] === 's' && name[1] === '-') {
+                        var type = name.slice(2);
+                        if (type === 'ref') {
+                            state.$refs[val] = el;
+                        } else if (type === 'model') {
+                            isInteractive = true;
+                            el.__modelPath = val;
+                            if (!bindings) bindings = [];
+                            bindings.push({ type: 'value', path: val });
+                            var evt = (el.type === 'checkbox' || el.type === 'radio' || el.tagName === 'SELECT') ? 'change' : 'input';
+                            addListener(evt);
+                        } else if (domOperations[type]) {
+                            if (!bindings) bindings = [];
+                            bindings.push({ type: type, path: val });
+                        } else {
+                            // Event Handlers
+                            isInteractive = true;
+                            if (!el.__handlers) el.__handlers = Object.create(null);
+                            el.__handlers[type] = val;
+                            addListener(type);
+                        }
+                    }
+                }
+
+                if (isInteractive) el.__scope = currentScope;
+
+                if (bindings) {
+                    cleanupList.push(createEffect(() => {
+                        for (var i = 0; i < bindings.length; i++) {
+                            var b = bindings[i];
+                            var evalRes = evaluatePath(currentScope, b.path);
+                            var res = evalRes.value;
+                            var finalVal = typeof res === 'function' ? res.call(evalRes.context, el) : res;
                             
-                        } else if (name[0] === 's' && name[1] === '-') {
-                            var directiveType = name.slice(2);
-                            
-                            if (directiveType === 'ref') {
-                                state.$refs[value] = el;
-                            } else if (directiveType === 'model') {
-                                isInteractive = true; // Flag for scope attachment
-                                cleanupList.push(createEffect(() => {
-                                    var evaluation = evaluatePath(currentScope, value);
-                                    domOperations.value(el, evaluation.value);
-                                }, nextTick));
-                                
-                                if (/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName)) {
-                                    el.__modelPath = value;
-                                    var eventType = (el.type === 'checkbox' || el.type === 'radio' || el.tagName === 'SELECT') 
-                                        ? 'change' 
-                                        : 'input';
-                                        
-                                    if (!rootElement.__listeningEvents) rootElement.__listeningEvents = new Set();
-                                    if (!rootElement.__listeningEvents.has(eventType)) {
-                                        rootElement.__listeningEvents.add(eventType);
-                                        rootElement.addEventListener(eventType, handleEvent);
-                                    }
-                                }
-                            } else if (domOperations[directiveType]) {
-                                cleanupList.push(createEffect(() => {
-                                    var evaluation = evaluatePath(currentScope, value);
-                                    var result = evaluation.value;
-                                    var context = evaluation.context;
-                                    domOperations[directiveType](
-                                        el, 
-                                        typeof result === 'function' ? result.call(context, el) : result
-                                    );
-                                }, nextTick));
+                            if (b.type === 'attr') {
+                                b.name === 'class' 
+                                    ? domOperations.class(el, finalVal) 
+                                    : domOperations.attr(el, finalVal, b.name);
                             } else {
-                                // Event Handlers
-                                isInteractive = true; // Flag for scope attachment
-                                var meta = eventMetadataMap.get(el);
-                                if (!meta) {
-                                    meta = {};
-                                    eventMetadataMap.set(el, meta);
-                                }
-                                meta[directiveType] = value;
-                                
-                                if (!rootElement.__listeningEvents) rootElement.__listeningEvents = new Set();
-                                if (!rootElement.__listeningEvents.has(directiveType)) {
-                                    rootElement.__listeningEvents.add(directiveType);
-                                    rootElement.addEventListener(directiveType, handleEvent);
-                                }
+                                domOperations[b.type](el, finalVal);
                             }
                         }
-                    })(attributes[i]);
+                    }, nextTick));
                 }
             }
 
-            // 6. Selective Scope Attachment
-            // Only attach scope to DOM elements that actually need it for events/models.
-            // This saves memory on static elements.
-            if (isInteractive) {
-                el.__scope = currentScope;
-            }
-
-            // 7. Recursive Traversal (Optimized Native Loop)
+            // Recursion
             var child = el.firstChild;
             while (child) {
                 var next = child.nextSibling;
@@ -571,38 +500,21 @@ var spiki = (() => {
         return {
             unmount: () => {
                 if (state.destroy) state.destroy.call(state);
-                cleanupCallbacks.forEach(cb => cb());
-                if (rootElement.__listeningEvents) {
-                    rootElement.__listeningEvents.forEach(evt => { 
-                        rootElement.removeEventListener(evt, handleEvent); 
-                    });
-                }
-                rootElement.__isMounted = 0;
+                for(var i=0; i<cleanupCallbacks.length; i++) cleanupCallbacks[i]();
+                for(var k in activeListeners) rootElement.removeEventListener(k, handleEvent);
+                rootElement.__isMounted = false;
             }
         };
     };
 
-    // =========================================================================
-    // 7. PUBLIC API
-    // =========================================================================
     return {
-        data: (name, factoryFn) => { 
-            componentRegistry[name] = factoryFn; 
-        },
+        data: (name, factory) => { componentRegistry[name] = factory; },
         start: () => {
-            var elements = document.querySelectorAll('[s-data]');
-            for (var i = 0; i < elements.length; i++) {
-                mountComponent(elements[i]);
-            }
+            var els = document.querySelectorAll('[s-data]');
+            for (var i = 0; i < els.length; i++) mountComponent(els[i]);
         },
-        store: (key, value) => { 
-            return value === undefined 
-                ? globalStore[key] 
-                : (globalStore[key] = value); 
-        },
-        raw: (obj) => {
-            return (obj && obj.__raw) || obj;
-        }
+        store: (key, val) => { return val === undefined ? globalStore[key] : (globalStore[key] = val); },
+        raw: (obj) => { return (obj && obj.__raw) || obj; }
     };
 })();
 
