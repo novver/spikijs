@@ -196,9 +196,6 @@ var spiki = (() => {
                     ? Number(key) < target.length 
                     : Object.prototype.hasOwnProperty.call(target, key);
                 
-                // PROTOTYPE WALKING (Scope Inheritance Support)
-                // If setting a property that doesn't exist on the child,
-                // check if it exists on the parent (prototype) to update it there.
                 if (!isArray && !hadKey) {
                     var cursor = Object.getPrototypeOf(target);
                     while (cursor && cursor !== Object.prototype) {
@@ -313,24 +310,26 @@ var spiki = (() => {
         // --- Event Delegation ---
         var handleEvent = (e) => {
             var target = e.target;
-            // Bubble up from target to root
             while (target && target !== rootElement.parentNode) {
-                var handlerInfo = target.__handlers && target.__handlers[e.type];
+                var handlers = target.__handlers && target.__handlers[e.type];
                 
-                if (handlerInfo) {
-                    // Case 1: s-model (Two-way binding)
-                    if (handlerInfo.isModel) {
-                        var val = target.type === 'checkbox' ? target.checked : target.value;
-                        var res = evaluatePath(target.__scope, handlerInfo.path);
-                        if (res.context) {
-                            if (handlerInfo.path.indexOf('.') === -1) res.context[handlerInfo.path] = val;
-                            else res.context[handlerInfo.path.split('.').pop()] = val;
+                if (handlers) {
+                    for (var i = 0; i < handlers.length; i++) {
+                        var h = handlers[i];
+                        // Case 1: s-model
+                        if (h.isModel) {
+                            var val = target.type === 'checkbox' ? target.checked : target.value;
+                            var res = evaluatePath(target.__scope, h.path);
+                            if (res.context) {
+                                if (h.path.indexOf('.') === -1) res.context[h.path] = val;
+                                else res.context[h.path.split('.').pop()] = val;
+                            }
+                        } 
+                        // Case 2: Standard Event
+                        else {
+                            var res = evaluatePath(target.__scope, h.path);
+                            if (typeof res.value === 'function') res.value.call(res.context, e);
                         }
-                    } 
-                    // Case 2: Standard Event
-                    else {
-                        var res = evaluatePath(target.__scope, handlerInfo.path);
-                        if (typeof res.value === 'function') res.value.call(res.context, e);
                     }
                 }
                 target = target.parentNode;
@@ -487,19 +486,20 @@ var spiki = (() => {
                         if (type === 'data') continue;
                         
                         if (type in domOperations) {
-                            // DOM Updaters (text, html, class)
                             bindings.push({ type: type, path: val });
                         } 
                         else if (type === 'model') {
-                            // Two-way binding setup
                             bindings.push({ type: 'value', path: val });
                             el.__modelPath = val; 
                             el.__scope = currentScope;
-                            if (!el.__handlers) el.__handlers = {};
+                            if (!el.__handlers) el.__handlers = {}; // Object map
                             
                             var evt = (el.type === 'checkbox' || el.type === 'radio' || el.tagName === 'SELECT') 
                                 ? 'change' : 'input';
-                            el.__handlers[evt] = { isModel: true, path: val };
+                            
+                            if (!el.__handlers[evt]) el.__handlers[evt] = [];
+                            el.__handlers[evt].unshift({ isModel: true, path: val });
+                            
                             addListener(evt);
                         } 
                         else if (type === 'ref') {
@@ -509,10 +509,14 @@ var spiki = (() => {
                             // Event Listeners
                             el.__scope = currentScope;
                             if (!el.__handlers) el.__handlers = {};
-                            el.__handlers[type] = { path: val };
+                            
+                            if (!el.__handlers[type]) el.__handlers[type] = [];
+                            el.__handlers[type].push({ path: val });
+                            
                             addListener(type);
                         }
                     }
+
                 }
 
                 // Register Effects for Bindings
