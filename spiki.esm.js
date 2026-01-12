@@ -279,7 +279,8 @@ var spiki = (() => {
                 // Object syntax: { 'active': true, 'hidden': false }
                 for (var cls in val) el.classList.toggle(cls, !!val[cls]);
             }
-        }
+        },
+        effect: () => { }
     };
 
     // =========================================================================
@@ -484,7 +485,13 @@ var spiki = (() => {
                     else if (name[0] === 's' && name[1] === '-') {
                         var type = name.slice(2);
                         if (type === 'data') continue;
-                        
+                        if (type === 'init') {
+                            var res = evaluatePath(currentScope, val);
+                            if (typeof res.value === 'function') {
+                                nextTick(() => res.value.call(res.context, el));
+                            }
+                            continue;
+                        }
                         if (type in domOperations) {
                             bindings.push({ type: type, path: val });
                         } 
