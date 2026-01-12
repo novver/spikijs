@@ -64,7 +64,10 @@ var spiki = (() => {
         var ctx = scope;
         
         for (var i = 0; i < parts.length; i++) {
-            if (val == null) return { value: undefined, context: null };
+            if (val == null){
+                console.warn('Property undefined: ' + path);
+                return { value: undefined, context: null };
+            }
             ctx = val;
             val = val[parts[i]];
         }
