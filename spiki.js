@@ -6,44 +6,31 @@
 "use strict";
 
 var spiki = (() => {
-    // =========================================================================
-    // 1. GLOBAL STATE & UTILITIES
-    // =========================================================================
-    
-    // Internal state
-    var componentRegistry = Object.create(null);
-    var schedulerQueue = [];
-    var isFlushingQueue = false;
-    var currentActiveEffect = null;
+    // -------------------------------------------------------------------------
+    // 1. STATE & UTILS
+    // -------------------------------------------------------------------------
+    var cmpReg = Object.create(null);
+    var scheduler = [];
+    var isFlushing = false;
+    var activeEffect = null;
+    var pauseTracking = false;
     var globalStore;
-    var shouldTriggerEffects = true; // Flag to pause reactivity during array mutations
-    
-    // Reusable objects
-    var resolvedPromise = Promise.resolve();
-    var loopRegex = /^\s*(.*?)\s+in\s+(.+)\s*$/; // Matches: "item in items"
+    var resolved = Promise.resolve();
 
-    /**
-     * Microtask Scheduler.
-     * Batches DOM updates to run once per tick.
-     * Uses 'Snapshotting' to prevent infinite loops if an effect triggers itself.
-     */
     var nextTick = (fn) => {
-        if (!fn.__queued) {
-            fn.__queued = true;
-            schedulerQueue.push(fn);
-
-            if (!isFlushingQueue) {
-                isFlushingQueue = true;
-                resolvedPromise.then(() => {
-                    // Create a snapshot of the current queue
-                    // This prevents new jobs added during flush from causing an infinite loop
-                    var queue = schedulerQueue.slice();
-                    schedulerQueue.length = 0;
-                    isFlushingQueue = false;
-
-                    // Execute jobs
+        if (!fn._q) {
+            fn._q = true;
+            scheduler.push(fn);
+            
+            if (!isFlushing) {
+                isFlushing = true;
+                resolved.then(() => {
+                    var queue = scheduler.slice();
+                    scheduler = [];
+                    isFlushing = false;
+                    
                     for (var i = 0; i < queue.length; i++) {
-                        queue[i].__queued = false;
+                        queue[i]._q = false;
                         queue[i]();
                     }
                 });
@@ -51,173 +38,136 @@ var spiki = (() => {
         }
     };
 
-    /**
-     * safely evaluates a dot-notation path string against a scope.
-     * Example: evaluatePath(scope, 'user.name')
-     */
-    var evaluatePath = (scope, path) => {
-        // Fast path: direct property access (most common case)
+    var evalPath = (scope, path) => {
         if (path.indexOf('.') === -1) {
-            return { value: scope[path], context: scope };
+            return { val: scope[path], ctx: scope };
         }
-
-        // Deep access: walk the object tree
+        
         var parts = path.split('.');
         var val = scope;
         var ctx = scope;
         
         for (var i = 0; i < parts.length; i++) {
-            if (val == null){
-                console.warn('Property undefined: ' + path);
-                return { value: undefined, context: null };
-            }
+            if (val == null) return { val: undefined, ctx: null };
             ctx = val;
             val = val[parts[i]];
         }
-        return { value: val, context: ctx };
+        return { val: val, ctx: ctx };
     };
 
-    // =========================================================================
-    // 2. REACTIVITY SYSTEM (Proxy Based)
-    // =========================================================================
-
-    // A. Array Instrumentation
-    // Intercept mutation methods to trigger updates manually
-    var arrayMethods = ['push', 'pop', 'shift', 'unshift', 'splice', 'sort', 'reverse'];
-    var arrayInstrumentations = {};
+    // -------------------------------------------------------------------------
+    // 2. REACTIVITY
+    // -------------------------------------------------------------------------
+    var arrMethods = ['push', 'pop', 'shift', 'unshift', 'splice', 'sort', 'reverse'];
+    var arrInst = {};
     
-    arrayMethods.forEach(method => {
-        arrayInstrumentations[method] = function () {
-            shouldTriggerEffects = false; // Pause triggering while mutating
+    arrMethods.forEach(method => {
+        arrInst[method] = function() {
+            pauseTracking = true;
             try { 
                 return Array.prototype[method].apply(this, arguments); 
-            } finally { 
-                shouldTriggerEffects = true; 
-                triggerDependency(this, 'length'); // Trigger update
+            } finally {  
+                pauseTracking = false; 
+                trigger(this, 'length'); 
             }
         };
     });
 
-    // B. Dependency Tracking
-    var trackDependency = (target, key) => {
-        if (currentActiveEffect) {
-            var deps = target.__deps;
-            if (!deps) {
-                // Define hidden dependency storage
-                Object.defineProperty(target, '__deps', { 
-                    value: Object.create(null), writable: true 
-                });
-                deps = target.__deps;
-            }
-
-            var list = deps[key] || (deps[key] = []);
+    var track = (target, key) => {
+        if (activeEffect) {
+            var deps = target._d || (Object.defineProperty(target, '_d', { 
+                value: Object.create(null), 
+                writable: true 
+            }), target._d);
             
-            // Link effect to dependency if not already linked
-            if (list.indexOf(currentActiveEffect) === -1) {
-                list.push(currentActiveEffect);
-                currentActiveEffect.deps.push(list);
+            var list = deps[key] || (deps[key] = []);
+            if (list.indexOf(activeEffect) === -1) {
+                list.push(activeEffect);
+                activeEffect.deps.push(list);
             }
         }
     };
 
-    var triggerDependency = (target, key) => {
-        if (shouldTriggerEffects && target.__deps && target.__deps[key]) {
-            // Snapshot effects to run
-            var queue = target.__deps[key].slice();
-            for (var i = 0; i < queue.length; i++) {
-                var effect = queue[i];
-                effect.scheduler ? effect.scheduler(effect) : effect();
+    var trigger = (target, key) => {
+        if (!pauseTracking && target._d && target._d[key]) {
+            var effects = target._d[key].slice();
+            for (var i = 0; i < effects.length; i++) {
+                var effect = effects[i];
+                effect.sched ? effect.sched(effect) : effect();
             }
         }
     };
 
-    // Helper: Efficiently remove an effect from its dependencies
-    var cleanupEffect = (runner) => {
-        if (runner.deps) {
-            for (var i = 0; i < runner.deps.length; i++) {
-                var list = runner.deps[i];
-                var idx = list.indexOf(runner);
-                if (idx !== -1) {
-                    // Optimized removal: Swap with last item, then pop (O(1))
-                    list[idx] = list[list.length - 1];
-                    list.pop();
-                }
+    var cleanup = (runner) => {
+        for (var i = 0; i < runner.deps.length; i++) {
+            var list = runner.deps[i];
+            var idx = list.indexOf(runner);
+            if (idx !== -1) { 
+                list[idx] = list[list.length - 1]; 
+                list.pop(); 
             }
-            runner.deps.length = 0;
         }
+        runner.deps = [];
     };
 
-    // C. Effect Creator
-    // Wraps a function to track dependencies during execution
-    var createEffect = (fn, scheduler) => {
+    var effect = (fn, sched) => {
         var runner = () => {
-            cleanupEffect(runner); // Clean old deps before re-run
-            var prev = currentActiveEffect;
-            currentActiveEffect = runner;
+            cleanup(runner);
+            var prev = activeEffect;
+            activeEffect = runner;
             try { 
                 fn(); 
             } finally { 
-                currentActiveEffect = prev; 
+                activeEffect = prev; 
             }
         };
         runner.deps = [];
-        runner.scheduler = scheduler;
-        runner(); // Initial run
-        return () => cleanupEffect(runner); // Return cleanup function
+        runner.sched = sched;
+        runner();
+        return () => cleanup(runner);
     };
 
-    // D. Reactive Factory (The core Proxy logic)
     var makeReactive = (obj) => {
-        // Return as-is if primitive, already proxy, or DOM node
-        if (!obj || typeof obj !== 'object' || obj.__isProxy || obj instanceof Node) return obj;
-        if (obj.__proxy) return obj.__proxy;
+        if (!obj || typeof obj !== 'object' || obj._y || obj instanceof Node) return obj;
+        if (obj._p) return obj._p;
 
         var proxy = new Proxy(obj, {
             get: (target, key, receiver) => {
-                // System flags
-                if (key === '__raw') return target;
-                if (key === '__isProxy') return true;
-                if (key === '__deps') return target.__deps;
+                if (key === '_y') return true;
+                if (key === '_d') return target._d;
+                if (Array.isArray(target) && arrInst.hasOwnProperty(key)) return arrInst[key];
                 
-                // Intercept Array methods
-                if (Array.isArray(target) && arrayInstrumentations.hasOwnProperty(key)) {
-                    return arrayInstrumentations[key];
-                }
-
-                trackDependency(target, key);
-                
+                track(target, key);
                 var res = Reflect.get(target, key, receiver);
-                // Recursive reactivity (Lazy)
                 return (res && typeof res === 'object' && !(res instanceof Node)) 
                     ? makeReactive(res) 
                     : res;
             },
-            set: (target, key, value, receiver) => {
+            set: (target, key, val, receiver) => {
                 var old = target[key];
-                var isArray = Array.isArray(target);
-                var hadKey = isArray 
+                var isArr = Array.isArray(target);
+                var hadKey = isArr 
                     ? Number(key) < target.length 
                     : Object.prototype.hasOwnProperty.call(target, key);
                 
-                if (!isArray && !hadKey) {
-                    var cursor = Object.getPrototypeOf(target);
-                    while (cursor && cursor !== Object.prototype) {
-                        if (Object.prototype.hasOwnProperty.call(cursor, key)) {
-                            var res = Reflect.set(cursor, key, value);
-                            if (shouldTriggerEffects && value !== old) triggerDependency(target, key);
+                if (!isArr && !hadKey) {
+                    var proto = Object.getPrototypeOf(target);
+                     while (proto && proto !== Object.prototype) {
+                        if (Object.prototype.hasOwnProperty.call(proto, key)) {
+                            var res = Reflect.set(proto, key, val);
+                            if (!pauseTracking && val !== old) trigger(target, key);
                             return res;
                         }
-                        cursor = Object.getPrototypeOf(cursor);
+                        proto = Object.getPrototypeOf(proto);
                     }
                 }
 
-                // Standard Set
-                var res = Reflect.set(target, key, value, receiver);
-                
-                if (shouldTriggerEffects && res) {
-                    if (!hadKey || value !== old) {
-                        triggerDependency(target, key);
-                        if (isArray) triggerDependency(target, 'length');
+                var res = Reflect.set(target, key, val, receiver);
+                if (!pauseTracking && res) {
+                    if (!hadKey || val !== old) {
+                        trigger(target, key);
+                        if (isArr) trigger(target, 'length');
+                        else if (!hadKey) trigger(target, '_k');
                     }
                 }
                 return res;
@@ -226,113 +176,115 @@ var spiki = (() => {
                 var hadKey = Object.prototype.hasOwnProperty.call(target, key);
                 var res = Reflect.deleteProperty(target, key);
                 if (res && hadKey) {
-                    triggerDependency(target, key);
-                    if (Array.isArray(target)) triggerDependency(target, 'length');
+                    trigger(target, key);
+                    if (Array.isArray(target)) trigger(target, 'length');
+                    else trigger(target, '_k');
                 }
                 return res;
+            },
+            ownKeys: (target) => {
+                track(target, '_k');
+                return Reflect.ownKeys(target);
             }
         });
         
-        // Cache the proxy
-        Object.defineProperty(obj, '__proxy', { value: proxy, enumerable: false });
+        Object.defineProperty(obj, '_p', { value: proxy, enumerable: false });
         return proxy;
     };
 
-    // Initialize Global Store
     globalStore = makeReactive({});
 
-    // =========================================================================
-    // 3. DOM OPERATIONS
-    // =========================================================================
-    var domOperations = {
+    // -------------------------------------------------------------------------
+    // 3. DOM & COMPONENT ENGINE
+    // -------------------------------------------------------------------------
+    var domOps = {
         text: (el, val) => { 
-            val = val == null ? '' : val;
-            if (el.textContent !== val) el.textContent = val; 
+            el.textContent = val == null ? '' : val; 
         },
         html: (el, val) => { 
-            val = val == null ? '' : val;
-            if (el.innerHTML !== val) el.innerHTML = val; 
+            if (el.innerHTML != val) el.innerHTML = val == null ? '' : val; 
         },
         value: (el, val) => {
             if (el.type === 'checkbox') {
                 el.checked = !!val;
             } else if (el.type === 'radio') {
                 el.checked = (el.value == val);
+            } else if (el.value != val) {
+                el.value = val == null ? '' : val;
+            }
+        },
+        attr: (el, val, name) => {
+            if (val == null || val === false) {
+                el.removeAttribute(name);
             } else {
-                val = val == null ? '' : val;
-                if (el.value != val) {
-                    // Fix: Preserve cursor position while updating value
-                    var start = el.selectionStart;
-                    var end = el.selectionEnd;
-                    el.value = val;
-                    if (document.activeElement === el) {
-                        try { el.setSelectionRange(start, end); } catch(e) {}
+                el.setAttribute(name, val === true ? '' : val);
+            }
+        },
+        class: (el, val) => {
+            if (typeof val === 'string') {
+                var parts = val.match(/\S+/g) || [];
+                for (var i = 0; i < parts.length; i++) {
+                    var c = parts[i];
+                    c[0] === '!' 
+                        ? el.classList.remove(c.slice(1)) 
+                        : el.classList.add(c);
+                }
+            } else if (val) {
+                for (var cls in val) {
+                    var add = !!val[cls];
+                    if (cls.indexOf(' ') !== -1) {
+                         var parts = cls.split(/\s+/);
+                         for (var j=0; j<parts.length; j++) {
+                             if(parts[j]) el.classList.toggle(parts[j], add);
+                         }
+                    } else {
+                        el.classList.toggle(cls, add);
                     }
                 }
             }
         },
-        attr: (el, val, attrName) => {
-            if (val == null || val === false) el.removeAttribute(attrName);
-            else el.setAttribute(attrName, val === true ? '' : val);
-        },
-        class: (el, val) => {
-            if (typeof val === 'string') {
-                if (el.className !== val) el.className = val;
-            } else if (val) {
-                // Object syntax: { 'active': true, 'hidden': false }
-                for (var cls in val) el.classList.toggle(cls, !!val[cls]);
-            }
-        },
-        effect: () => { }
+        effect: () => {}, 
+        init: () => {}, 
+        destroy: () => {}, 
+        model: () => {}, 
+        ref: () => {}
     };
 
-    // =========================================================================
-    // 4. COMPONENT ENGINE
-    // =========================================================================
-    var mountComponent = (rootElement, parentScope) => {
-        if (rootElement.__isMounted) return;
-        rootElement.__isMounted = true;
-
+    var mount = (rootElement, parentScope) => {
+        if (rootElement._m) return;
+        
         var name = rootElement.getAttribute('s-data');
-        var factory = componentRegistry[name];
-        if (!factory) return;
+        if (!cmpReg[name]) return;
 
-        // Create Component Data
-        var data = factory();
-        // Inherit Scope via Prototype Chain
+        rootElement._m = true;
+        var data = cmpReg[name]();
         if (parentScope) Object.setPrototypeOf(data, parentScope);
         
         var state = makeReactive(data);
-        state.$refs = {};
-        state.$root = rootElement;
-        state.$store = globalStore;
+        state.$refs = {}; 
+        state.$root = rootElement; 
+        state.$store = globalStore; 
         state.$parent = parentScope;
+        
+        var cleanups = [];
+        var listeners = Object.create(null);
 
-        var cleanupCallbacks = [];
-        var activeListeners = Object.create(null);
-
-        // --- Event Delegation ---
-        var handleEvent = (e) => {
-            var target = e.target;
+        var handle = (event) => {
+            var target = event.target;
             while (target && target !== rootElement.parentNode) {
-                var handlers = target.__handlers && target.__handlers[e.type];
-                
+                var handlers = target._h && target._h[event.type];
                 if (handlers) {
                     for (var i = 0; i < handlers.length; i++) {
-                        var h = handlers[i];
-                        // Case 1: s-model
-                        if (h.isModel) {
+                        var handler = handlers[i];
+                        if (handler.model) {
                             var val = target.type === 'checkbox' ? target.checked : target.value;
-                            var res = evaluatePath(target.__scope, h.path);
-                            if (res.context) {
-                                if (h.path.indexOf('.') === -1) res.context[h.path] = val;
-                                else res.context[h.path.split('.').pop()] = val;
+                            var result = evalPath(target._s, handler.path);
+                            if (result.ctx) {
+                                result.ctx[result.ctx === target._s ? handler.path : handler.path.split('.').pop()] = val;
                             }
-                        } 
-                        // Case 2: Standard Event
-                        else {
-                            var res = evaluatePath(target.__scope, h.path);
-                            if (typeof res.value === 'function') res.value.call(res.context, e);
+                        } else {
+                            var result = evalPath(target._s, handler.path);
+                            if (typeof result.val === 'function') result.val.call(result.ctx, event);
                         }
                     }
                 }
@@ -340,252 +292,242 @@ var spiki = (() => {
             }
         };
 
-        var addListener = (type) => {
-            if (!activeListeners[type]) {
-                activeListeners[type] = true;
-                rootElement.addEventListener(type, handleEvent);
+        var addListen = (type) => {
+            if (!listeners[type]) { 
+                listeners[type] = true; 
+                rootElement.addEventListener(type, handle); 
             }
         };
 
-        // --- DOM Parser (Recursive) ---
-        var walkDOM = (el, currentScope, cleanupList) => {
+        var walk = (el, scope, parentCleanups) => {
             if (el.nodeType !== 1 || el.hasAttribute('s-ignore')) return;
 
-            // 1. Nested Component Check
             if (el !== rootElement && el.hasAttribute('s-data')) {
-                var child = mountComponent(el, currentScope);
-                if (child) cleanupList.push(child.unmount);
+                var component = mount(el, scope);
+                if (component) parentCleanups.push(component.unmount);
                 return;
             }
 
-            var ifAttr = el.getAttribute('s-if');
-            // Check for s-for on <template> specifically, or normal elements
-            var forAttr = !ifAttr && el.tagName === 'TEMPLATE' && el.getAttribute('s-for');
+            var directiveIf = el.getAttribute('s-if');
+            var directiveFor = !directiveIf && el.tagName === 'TEMPLATE' && el.getAttribute('s-for');
+            var bindings = [];
 
-            // 2. Handle s-if (Conditional Rendering)
-            if (ifAttr) {
-                var anchor = document.createTextNode('');
-                el.replaceWith(anchor);
+            if (directiveIf) {
+                var end = document.createTextNode('');
+                var active = null;
+                var cBranch = [];
                 
-                var activeEl = null;
-                var branchCleanups = [];
+                el.replaceWith(end);
+                var negate = directiveIf[0] === '!';
+                var path = negate ? directiveIf.slice(1) : directiveIf;
                 
-                cleanupList.push(() => branchCleanups.forEach(cb => cb()));
-
-                return cleanupList.push(createEffect(() => {
-                    var shouldRender = evaluatePath(currentScope, ifAttr).value;
+                parentCleanups.push(() => { cBranch.forEach(cleanup => cleanup()); });
+                
+                return parentCleanups.push(effect(() => {
+                    var show = evalPath(scope, path).val;
+                    if (negate) show = !show;
                     
-                    if (shouldRender) {
-                        if (!activeEl) {
-                            activeEl = el.cloneNode(true);
-                            activeEl.removeAttribute('s-if');
-                            walkDOM(activeEl, currentScope, branchCleanups);
-                            anchor.parentNode.insertBefore(activeEl, anchor);
+                    if (show) {
+                        if (!active) {
+                            active = el.cloneNode(true); 
+                            active.removeAttribute('s-if');
+                            walk(active, scope, cBranch);
+                            end.parentNode.insertBefore(active, end);
                         }
-                    } else if (activeEl) {
-                        branchCleanups.forEach(cb => cb());
-                        branchCleanups.length = 0;
-                        activeEl.remove();
-                        activeEl = null;
+                    } else if (active) {
+                        cBranch.forEach(cleanup => cleanup()); 
+                        cBranch = [];
+                        active.remove(); 
+                        active = null;
                     }
                 }, nextTick));
             }
 
-            // 3. Handle s-for (List Rendering)
-            if (forAttr) {
-                var match = forAttr.match(loopRegex);
-                if (match) {
-                    var lhs = match[1].split(',').map(s => s.trim().replace(/[()]/g, ''));
-                    var alias = lhs[0], idxAlias = lhs[1];
-                    var listKey = match[2].trim();
+            if (directiveFor) {
+                var regexMatch = directiveFor.match(/^\s*(.*?)\s+in\s+(.+)\s*$/);
+                if (regexMatch) {
+                    var leftHandSide = regexMatch[1].split(',').map(s => s.trim().replace(/[()]/g, ''));
+                    var alias = leftHandSide[0];
+                    var idxAlias = leftHandSide[1];
+                    var listKey = regexMatch[2].trim();
                     var keyAttr = el.getAttribute('s-key');
+                    var end = document.createTextNode('');
+                    var nodePool = Object.create(null);
+                    var usedKeys;
                     
-                    var anchor = document.createTextNode('');
-                    el.replaceWith(anchor);
-                    var nodePool = Object.create(null); // Cache for DOM nodes
+                    el.replaceWith(end);
 
-                    cleanupList.push(() => {
-                        for(var k in nodePool) nodePool[k].cleanups.forEach(cb => cb());
-                    });
+                     parentCleanups.push(() => { 
+                          for(var key in nodePool) nodePool[key].cleanups.forEach(cleanup => cleanup()); 
+                     });
 
-                    return cleanupList.push(createEffect(() => {
-                        var items = evaluatePath(currentScope, listKey).value || [];
-                        if (Array.isArray(items)) trackDependency(items, 'length');
-
-                        var fragment = document.createDocumentFragment();
-                        var nextPool = Object.create(null);
+                    return parentCleanups.push(effect(() => {
+                        var list = evalPath(scope, listKey).val || [];
+                        if (Array.isArray(list)) track(list, 'length');
                         
-                        var isArr = Array.isArray(items);
-                        var keys = isArr ? items : Object.keys(items);
-                        var len = isArr ? items.length : keys.length;
-                        var cursor = anchor;
+                        var frag = document.createDocumentFragment();
+                        var cursor = end;
+                        usedKeys = Object.create(null);
+                        
+                        var isArr = Array.isArray(list);
+                        var keys = isArr ? list : Object.keys(list);
+                        var len = isArr ? list.length : keys.length;
 
                         for (var i = 0; i < len; i++) {
                             var key = isArr ? i : keys[i];
-                            var item = isArr ? items[i] : items[key];
+                            var item = isArr ? list[i] : list[key];
                             
-                            // Key Strategy: Use s-key if provided, otherwise fallback to index + content hash
-                            var unique = (keyAttr && item) 
-                                ? item[keyAttr] 
-                                : (isArr ? String(key) + '_' + (typeof item === 'object' ? 'o' : String(item)) : key);
+                            var unique;
+                            if (item == null || typeof item !== 'object') {
+                                unique = String(item);
+                            } else if (keyAttr) {
+                                unique = evalPath(item, keyAttr).val;
+                            } else {
+                                unique = String(key) + '_o';
+                            }
+                            
+                            if (usedKeys[unique]) unique += '_' + i;
                             
                             var row = nodePool[unique];
-                            
                             if (row) {
-                                // Update existing row
                                 row.scope[alias] = item;
                                 if (idxAlias) row.scope[idxAlias] = key;
                             } else {
-                                // Create new row
                                 var clone = el.content.cloneNode(true);
-                                var rScope = makeReactive(Object.create(currentScope)); // Inherit scope
-                                rScope[alias] = item;
-                                if (idxAlias) rScope[idxAlias] = key;
+                                var rowScope = makeReactive(Object.create(scope));
                                 
-                                var rCleanups = [];
-                                var rNodes = Array.prototype.slice.call(clone.childNodes);
+                                rowScope[alias] = item; 
+                                if (idxAlias) rowScope[idxAlias] = key;
                                 
-                                for (var n = 0; n < rNodes.length; n++) walkDOM(rNodes[n], rScope, rCleanups);
-                                row = { nodes: rNodes, scope: rScope, cleanups: rCleanups };
+                                var rowNodes = Array.prototype.slice.call(clone.childNodes);
+                                var rowCleanups = [];
+                                
+                                for(var n=0; n<rowNodes.length; n++) walk(rowNodes[n], rowScope, rowCleanups);
+                                
+                                row = { nodes: rowNodes, scope: rowScope, cleanups: rowCleanups };
+                                nodePool[unique] = row;
                             }
 
-                            // Reorder DOM if necessary
                             if (row.nodes[0] !== cursor.nextSibling) {
-                                for (var n = 0; n < row.nodes.length; n++) fragment.appendChild(row.nodes[n]);
-                                cursor.parentNode.insertBefore(fragment, cursor.nextSibling);
+                                for(var n=0; n<row.nodes.length; n++) frag.appendChild(row.nodes[n]);
+                                cursor.parentNode.insertBefore(frag, cursor.nextSibling);
                             }
-                            cursor = row.nodes[row.nodes.length - 1];
-                            nextPool[unique] = row;
-                            if (nodePool[unique]) delete nodePool[unique];
+                            cursor = row.nodes[row.nodes.length-1];
+                            usedKeys[unique] = true;
                         }
 
-                        // Cleanup removed items
-                        for (var k in nodePool) {
-                            nodePool[k].cleanups.forEach(cb => cb());
-                            for (var n = 0; n < nodePool[k].nodes.length; n++) nodePool[k].nodes[n].remove();
+                        for (var key in nodePool) {
+                            if (!usedKeys[key]) {
+                                nodePool[key].cleanups.forEach(cleanup => cleanup());
+                                for(var n=0; n<nodePool[key].nodes.length; n++) nodePool[key].nodes[n].remove();
+                                delete nodePool[key];
+                            }
                         }
-                        nodePool = nextPool;
                     }, nextTick));
                 }
-                return;
             }
 
-            // 4. Handle Attributes & Bindings
             if (el.hasAttributes()) {
-                var bindings = [];
                 var attrs = el.attributes;
-                var len = attrs.length;
-                
-                for (var i = 0; i < len; i++) {
-                    var name = attrs[i].name;
-                    var val = attrs[i].value;
-
-                    // A. Bindings (:src, :class, etc)
-                    if (name[0] === ':') { 
-                        bindings.push({ type: 'attr', name: name.slice(1), path: val });
-                    } 
-                    // B. Directives (s-text, s-model, s-click, etc)
-                    else if (name[0] === 's' && name[1] === '-') {
-                        var type = name.slice(2);
+                for (var i = 0; i < attrs.length; i++) {
+                    var attrName = attrs[i].name;
+                    var attrValue = attrs[i].value;
+                    
+                    if (attrName[0] === ':') {
+                        var realName = attrName.slice(1);
+                        var neg = attrValue[0] === '!';
+                        bindings.push({ type: 'attr', name: realName, path: neg ? attrValue.slice(1) : attrValue, neg: neg });
+                    } else if (attrName.indexOf('s-') === 0) {
+                        var type = attrName.slice(2);
                         if (type === 'data') continue;
-                        if (type === 'init') {
-                            var res = evaluatePath(currentScope, val);
-                            if (typeof res.value === 'function') {
-                                nextTick(() => res.value.call(res.context, el));
-                            }
-                            continue;
-                        }
-                        if (type in domOperations) {
-                            bindings.push({ type: type, path: val });
-                        } 
-                        else if (type === 'model') {
-                            bindings.push({ type: 'value', path: val });
-                            el.__modelPath = val; 
-                            el.__scope = currentScope;
-                            if (!el.__handlers) el.__handlers = {}; // Object map
-                            
-                            var evt = (el.type === 'checkbox' || el.type === 'radio' || el.tagName === 'SELECT') 
-                                ? 'change' : 'input';
-                            
-                            if (!el.__handlers[evt]) el.__handlers[evt] = [];
-                            el.__handlers[evt].unshift({ isModel: true, path: val });
-                            
-                            addListener(evt);
-                        } 
-                        else if (type === 'ref') {
-                            state.$refs[val] = el;
-                        }
-                        else {
-                            // Event Listeners
-                            el.__scope = currentScope;
-                            if (!el.__handlers) el.__handlers = {};
-                            
-                            if (!el.__handlers[type]) el.__handlers[type] = [];
-                            el.__handlers[type].push({ path: val });
-                            
-                            addListener(type);
+                        
+                        if (type === 'init' || type === 'destroy') {
+                            ((type, path) => {
+                                var result = evalPath(scope, path);
+                                if (typeof result.val === 'function') {
+                                    if (type === 'init') {
+                                        nextTick(() => result.val.call(result.ctx, el));
+                                    } else {
+                                        parentCleanups.push(() => result.val.call(result.ctx, el));
+                                    }
+                                }
+                            })(type, attrValue);
+                        } else if (type === 'model') {
+                             bindings.push({ type: 'value', path: attrValue });
+                             el._s = scope; 
+                             el._h = el._h || {};
+                             var evt = (el.type === 'checkbox' || el.type === 'radio' || el.tagName==='SELECT') 
+                                ? 'change' 
+                                : 'input';
+                                
+                             (el._h[evt] = el._h[evt] || []).unshift({ model: true, path: attrValue });
+                             addListen(evt);
+                        } else if (type === 'ref') {
+                            state.$refs[attrValue] = el;
+                        } else if (domOps[type]) {
+                            bindings.push({ type: type, path: attrValue });
+                        } else {
+                            el._s = scope; 
+                            el._h = el._h || {};
+                            (el._h[type] = el._h[type] || []).push({ path: attrValue });
+                            addListen(type);
                         }
                     }
-
-                }
-
-                // Register Effects for Bindings
-                if (bindings.length) {
-                    cleanupList.push(createEffect(() => {
-                        for (var i = 0; i < bindings.length; i++) {
-                            var binding = bindings[i];
-                            var res = evaluatePath(currentScope, binding.path);
-                            // Evaluate value (execute if function)
-                            var finalVal = (res.value && typeof res.value === 'function') 
-                                ? res.value.call(res.context, el) 
-                                : res.value;
-                            
-                            if (binding.type === 'attr') {
-                                binding.name === 'class' 
-                                    ? domOperations.class(el, finalVal) 
-                                    : domOperations.attr(el, finalVal, binding.name);
-                            } else {
-                                domOperations[binding.type](el, finalVal);
-                            }
-                        }
-                    }, nextTick));
                 }
             }
 
-            // Recurse to children
+            if (bindings.length) {
+                parentCleanups.push(effect(() => {
+                    for (var i = 0; i < bindings.length; i++) {
+                        var binding = bindings[i];
+                        var result = evalPath(scope, binding.path);
+                        var val = (result.val && typeof result.val === 'function') ? result.val.call(result.ctx, el) : result.val;
+                        
+                        if (binding.type === 'attr') {
+                            if (binding.neg) val = !val;
+                            if (binding.name === 'class') {
+                                domOps.class(el, val);
+                            } else if (binding.name === 'hidden' && binding.neg) {
+                                domOps.attr(el, val, 'hidden');
+                            } else {
+                                domOps.attr(el, val, binding.name);
+                            }
+                        } else {
+                            domOps[binding.type](el, val);
+                        }
+                    }
+                }, nextTick));
+            }
+
             var child = el.firstChild;
-            while (child) {
-                var next = child.nextSibling;
-                walkDOM(child, currentScope, cleanupList);
-                child = next;
+            while (child) { 
+                var nextSibling = child.nextSibling; 
+                walk(child, scope, parentCleanups); 
+                child = nextSibling; 
             }
         };
 
-        // Initialize
-        walkDOM(rootElement, state, cleanupCallbacks);
+        walk(rootElement, state, cleanups);
         if (state.init) state.init();
 
         return {
             unmount: () => {
                 if (state.destroy) state.destroy.call(state);
-                cleanupCallbacks.forEach(cb => cb());
-                for (var k in activeListeners) rootElement.removeEventListener(k, handleEvent);
-                rootElement.__isMounted = false;
+                cleanups.forEach(cleanup => cleanup());
+                for(var k in listeners) rootElement.removeEventListener(k, handle);
+                rootElement._m = false;
             }
         };
     };
 
-    // =========================================================================
-    // 5. PUBLIC API
-    // =========================================================================
     return {
-        data: (name, factory) => { componentRegistry[name] = factory; },
+        data: (name, factory) => { cmpReg[name] = factory; },
         start: () => {
             var els = document.querySelectorAll('[s-data]');
-            for (var i = 0; i < els.length; i++) mountComponent(els[i]);
+            for(var i=0; i<els.length; i++) mount(els[i]);
         },
-        store: (key, val) => val === undefined ? globalStore[key] : (globalStore[key] = val),
-        raw: (obj) => (obj && obj.__raw) || obj
+        store: (k, v) => v === undefined ? globalStore[k] : (globalStore[k] = v),
+        raw: (o) => (o && o._r) || o
     };
 })();
 
