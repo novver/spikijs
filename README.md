@@ -46,6 +46,7 @@ You can drop Spiki directly into your HTML file using the script tag:
     <button s-click="increment">Add +1</button>
 </div>
 
+<script src="//unpkg.com/spikijs"></script>
 <script>
     spiki.data('counterApp', () => ({
         count: 0,
@@ -54,7 +55,7 @@ You can drop Spiki directly into your HTML file using the script tag:
         }
     }));
 
-    spiki.start();
+    document.addEventListener('DOMContentLoaded', spiki.start); // spiki.start();
 </script>
 ```
 ## Directives Reference
