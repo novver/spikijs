@@ -29,7 +29,7 @@ import spiki from 'spikijs';
 You can drop Spiki directly into your HTML file using the script tag:
 
 ```html
-<script src="//unpkg.com/spikijs"></script>
+<script src="https://unpkg.com/spikijs"></script>
 ```
 
 ---
@@ -46,7 +46,7 @@ You can drop Spiki directly into your HTML file using the script tag:
     <button s-click="increment">Add +1</button>
 </div>
 
-<script src="//unpkg.com/spikijs"></script>
+<script src="https://unpkg.com/spikijs"></script>
 <script>
     spiki.data('counterApp', () => ({
         count: 0,
