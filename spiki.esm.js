@@ -45,7 +45,10 @@ var spiki = (() => {
         var ctx = scope;
         
         for (var i = 0; i < parts.length; i++) {
-            if (val == null) return { val: undefined, ctx: null };
+            if (val == null) {
+                console.warn('Property undefined: ' + path);
+                return { val: undefined, ctx: null };
+            }
             ctx = val;
             val = val[parts[i]];
         }
@@ -240,11 +243,7 @@ var spiki = (() => {
                 }
             }
         },
-        effect: () => {}, 
-        init: () => {}, 
-        destroy: () => {}, 
-        model: () => {}, 
-        ref: () => {}
+        effect: () => {}
     };
 
     var mount = (rootElement, parentScope) => {
@@ -436,8 +435,6 @@ var spiki = (() => {
                         bindings.push({ type: 'attr', name: realName, path: neg ? attrValue.slice(1) : attrValue, neg: neg });
                     } else if (attrName.indexOf('s-') === 0) {
                         var type = attrName.slice(2);
-                        if (type === 'data') continue;
-                        
                         if (type === 'init' || type === 'destroy') {
                             ((type, path) => {
                                 var result = evalPath(scope, path);
@@ -484,8 +481,6 @@ var spiki = (() => {
                             if (binding.neg) val = !val;
                             if (binding.name === 'class') {
                                 domOps.class(el, val);
-                            } else if (binding.name === 'hidden' && binding.neg) {
-                                domOps.attr(el, val, 'hidden');
                             } else {
                                 domOps.attr(el, val, binding.name);
                             }
@@ -524,7 +519,7 @@ var spiki = (() => {
             for(var i=0; i<els.length; i++) mount(els[i]);
         },
         store: (k, v) => v === undefined ? globalStore[k] : (globalStore[k] = v),
-        raw: (o) => (o && o._r) || o
+        raw: (o) => (o && o._p) || o
     };
 })();
 
