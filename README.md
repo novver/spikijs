@@ -19,6 +19,10 @@ Install the package via npm:
 ```bash
 npm install spikijs
 ```
+or
+```bash
+bun install spikijs
+```
 
 Import it into your module:
 ```javascript
