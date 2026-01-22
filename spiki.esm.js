@@ -35,17 +35,22 @@ var spiki = (() => {
     };
 
     var evalPath = (scope, path) => {
+        var ctx = scope;
+        var val;
         if (typeof path === 'string') {
-            return { ctx: scope, val: scope ? scope[path] : undefined };
+            val = scope ? scope[path] : undefined;
+        } else {
+            var i = 0, len = path.length;
+            while (i < len - 1 && ctx) {
+                ctx = ctx[path[i++]];
+            }
+            val = ctx ? ctx[path[len - 1]] : undefined;
         }
-        var i = 0, len = path.length;
-        while (i < len - 1 && scope) {
-            scope = scope[path[i++]];
+        if (val === undefined) {
+            var displayPath = Array.isArray(path) ? path.join('.') : path;
+            console.warn('Property undefined:' + displayPath);
         }
-        return { 
-            ctx: scope, 
-            val: scope ? scope[path[len - 1]] : undefined 
-        };
+        return { ctx: ctx, val: val };
     };
 
     // -------------------------------------------------------------------------
@@ -119,6 +124,7 @@ var spiki = (() => {
         var proxy = new Proxy(obj, {
             get: (target, key, receiver) => {
                 if (key === '_y') return true;
+                if (key === '_t') return target;
                 if (key === '_d') return target._d;
                 if (Array.isArray(target) && arrInst.hasOwnProperty(key)) return arrInst[key];
                 var desc = Object.getOwnPropertyDescriptor(target, key);
@@ -410,8 +416,8 @@ var spiki = (() => {
                         bindings.push({ type: 'attr', name: realName, path: p, neg: neg });
                     } 
                     else if (attrName.charCodeAt(0) === 115 && attrName.charCodeAt(1) === 45) {
-                        var type = attrName.slice(2);
-                        var p = attrValue.indexOf('.') === -1 ? attrValue : attrValue.split('.');
+                        let type = attrName.slice(2);
+                        let p = attrValue.indexOf('.') === -1 ? attrValue : attrValue.split('.');
 
                         if (type === 'init' || type === 'destroy') {
                             ((type, path) => {
@@ -508,7 +514,7 @@ var spiki = (() => {
             while (i--) mount(els[i]);
         },
         store: (k, v) => v === undefined ? globalStore[k] : (globalStore[k] = v),
-        raw: (o) => (o && o._p) || o,
+        raw: (o) => (o && o._t) || o,
         mount: (el) => mount(el),
         unmount: (el) => { if (el && el._m) el._m.unmount(); }
     };
