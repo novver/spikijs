@@ -21,15 +21,14 @@ var spiki = (() => {
         if (!fn._q) {
             fn._q = true;
             scheduler.push(fn);
-            
             if (!isFlushing) {
                 isFlushing = true;
                 resolved.then(() => {
-                    var queue = scheduler.slice();
+                    var queue = scheduler;
                     scheduler = [];
                     isFlushing = false;
-                    
-                    for (var i = 0; i < queue.length; i++) {
+                    var i = queue.length;
+                    while (i--) {
                         queue[i]._q = false;
                         queue[i]();
                     }
@@ -39,23 +38,17 @@ var spiki = (() => {
     };
 
     var evalPath = (scope, path) => {
-        if (path.indexOf('.') === -1) {
-            return { val: scope[path], ctx: scope };
+        if (typeof path === 'string') {
+            return { ctx: scope, val: scope ? scope[path] : undefined };
         }
-        
-        var parts = path.split('.');
-        var val = scope;
-        var ctx = scope;
-        
-        for (var i = 0; i < parts.length; i++) {
-            if (val == null) {
-                console.warn('Property undefined: ' + path);
-                return { val: undefined, ctx: null };
-            }
-            ctx = val;
-            val = val[parts[i]];
+        var i = 0, len = path.length;
+        while (i < len - 1 && scope) {
+            scope = scope[path[i++]];
         }
-        return { val: val, ctx: ctx };
+        return { 
+            ctx: scope, 
+            val: scope ? scope[path[len - 1]] : undefined 
+        };
     };
 
     // -------------------------------------------------------------------------
@@ -65,24 +58,18 @@ var spiki = (() => {
     var arrInst = {};
     
     arrMethods.forEach(method => {
-        arrInst[method] = function() {
+        arrInst[method] = function(...args) {
             pauseTracking = true;
-            try { 
-                return Array.prototype[method].apply(this, arguments); 
-            } finally {  
-                pauseTracking = false; 
-                trigger(this, 'length'); 
-            }
+            try { return Array.prototype[method].apply(this, args); } 
+            finally { pauseTracking = false; trigger(this, 'length'); }
         };
     });
 
     var track = (target, key) => {
         if (activeEffect) {
             var deps = target._d || (Object.defineProperty(target, '_d', { 
-                value: Object.create(null), 
-                writable: true 
+                value: Object.create(null), writable: true 
             }), target._d);
-            
             var list = deps[key] || (deps[key] = []);
             if (list.indexOf(activeEffect) === -1) {
                 list.push(activeEffect);
@@ -94,7 +81,8 @@ var spiki = (() => {
     var trigger = (target, key) => {
         if (!pauseTracking && target._d && target._d[key]) {
             var effects = target._d[key].slice();
-            for (var i = 0; i < effects.length; i++) {
+            var i = 0, len = effects.length;
+            for (; i < len; i++) {
                 var effect = effects[i];
                 effect.sched ? effect.sched(effect) : effect();
             }
@@ -102,7 +90,8 @@ var spiki = (() => {
     };
 
     var cleanup = (runner) => {
-        for (var i = 0; i < runner.deps.length; i++) {
+        var i = runner.deps.length;
+        while (i--) {
             var list = runner.deps[i];
             var idx = list.indexOf(runner);
             if (idx !== -1) { 
@@ -118,11 +107,7 @@ var spiki = (() => {
             cleanup(runner);
             var prev = activeEffect;
             activeEffect = runner;
-            try { 
-                fn(); 
-            } finally { 
-                activeEffect = prev; 
-            }
+            try { fn(); } finally { activeEffect = prev; }
         };
         runner.deps = [];
         runner.sched = sched;
@@ -139,20 +124,20 @@ var spiki = (() => {
                 if (key === '_y') return true;
                 if (key === '_d') return target._d;
                 if (Array.isArray(target) && arrInst.hasOwnProperty(key)) return arrInst[key];
-                
+                var desc = Object.getOwnPropertyDescriptor(target, key);
+                if (desc && desc.get) {
+                    var cacheKey = '_' + key;
+                    if (!(cacheKey in target)) effect(() => receiver[cacheKey] = desc.get.call(receiver));
+                    return receiver[cacheKey];
+                }
                 track(target, key);
                 var res = Reflect.get(target, key, receiver);
-                return (res && typeof res === 'object' && !(res instanceof Node)) 
-                    ? makeReactive(res) 
-                    : res;
+                return (res && typeof res === 'object' && !(res instanceof Node)) ? makeReactive(res) : res;
             },
             set: (target, key, val, receiver) => {
                 var old = target[key];
                 var isArr = Array.isArray(target);
-                var hadKey = isArr 
-                    ? Number(key) < target.length 
-                    : Object.prototype.hasOwnProperty.call(target, key);
-                
+                var hadKey = isArr ? Number(key) < target.length : Object.prototype.hasOwnProperty.call(target, key);
                 if (!isArr && !hadKey) {
                     var proto = Object.getPrototypeOf(target);
                      while (proto && proto !== Object.prototype) {
@@ -164,7 +149,6 @@ var spiki = (() => {
                         proto = Object.getPrototypeOf(proto);
                     }
                 }
-
                 var res = Reflect.set(target, key, val, receiver);
                 if (!pauseTracking && res) {
                     if (!hadKey || val !== old) {
@@ -200,53 +184,36 @@ var spiki = (() => {
     // -------------------------------------------------------------------------
     // 3. DOM & COMPONENT ENGINE
     // -------------------------------------------------------------------------
-    var domOps = {
-        text: (el, val) => { 
-            el.textContent = val == null ? '' : val; 
-        },
-        html: (el, val) => { 
-            if (el.innerHTML != val) el.innerHTML = val == null ? '' : val; 
-        },
-        value: (el, val) => {
-            if (el.type === 'checkbox') {
-                el.checked = !!val;
-            } else if (el.type === 'radio') {
-                el.checked = (el.value == val);
-            } else if (el.value != val) {
-                el.value = val == null ? '' : val;
-            }
-        },
-        attr: (el, val, name) => {
-            if (val == null || val === false) {
-                el.removeAttribute(name);
-            } else {
-                el.setAttribute(name, val === true ? '' : val);
-            }
-        },
-        class: (el, val) => {
-            if (typeof val === 'string') {
-                var parts = val.match(/\S+/g) || [];
-                for (var i = 0; i < parts.length; i++) {
-                    var c = parts[i];
-                    c[0] === '!' 
-                        ? el.classList.remove(c.slice(1)) 
-                        : el.classList.add(c);
-                }
-            } else if (val) {
-                for (var cls in val) {
-                    var add = !!val[cls];
-                    if (cls.indexOf(' ') !== -1) {
-                         var parts = cls.split(/\s+/);
-                         for (var j=0; j<parts.length; j++) {
-                             if(parts[j]) el.classList.toggle(parts[j], add);
-                         }
-                    } else {
-                        el.classList.toggle(cls, add);
-                    }
-                }
-            }
-        },
-        effect: () => {}
+    var domOps = Object.create(null);
+    domOps.text = (el, val) => { 
+        val = val == null ? '' : val;
+        if (el.textContent !== String(val)) el.textContent = val;
+    };
+    domOps.html = (el, val) => { 
+        if (el.innerHTML != val) el.innerHTML = val == null ? '' : val; 
+    };
+    domOps.value = (el, val) => {
+        if (el.type === 'checkbox') el.checked = !!val;
+        else if (el.type === 'radio') el.checked = (el.value == val);
+        else if (el.value != val) el.value = val == null ? '' : val;
+    };
+    domOps.attr = (el, val, name) => {
+        if (val == null || val === false) el.removeAttribute(name);
+        else {
+            var str = val === true ? '' : String(val);
+            if (el.getAttribute(name) !== str) el.setAttribute(name, str);
+        }
+    };
+    domOps.class = (el, val) => {
+        var base = el._n || '';
+        var dyn = '';
+        if (typeof val === 'string') {
+            dyn = val;
+        } else if (val) {
+            for (var k in val) if (val[k]) dyn += (dyn ? ' ' : '') + k;
+        }
+        var res = base + (base && dyn ? ' ' : '') + dyn;
+        if (el.className !== res) el.className = res;
     };
 
     var mount = (rootElement, parentScope) => {
@@ -270,19 +237,40 @@ var spiki = (() => {
 
         var handle = (event) => {
             var target = event.target;
-            while (target && target !== rootElement.parentNode) {
-                var handlers = target._h && target._h[event.type];
+            if (event.type === 'input' && target._c) return;
+            var limit = rootElement.parentNode;
+            var type = event.type; 
+        
+            while (target && target !== limit) {
+                var handlers = target._h && target._h[type];
+                
                 if (handlers) {
-                    for (var i = 0; i < handlers.length; i++) {
+                    var scope = target._s; 
+                    var i = handlers.length;
+                    while (i--) {
                         var handler = handlers[i];
+                        var path = handler.p;
+        
                         if (handler.model) {
                             var val = target.type === 'checkbox' ? target.checked : target.value;
-                            var result = evalPath(target._s, handler.path);
-                            if (result.ctx) {
-                                result.ctx[result.ctx === target._s ? handler.path : handler.path.split('.').pop()] = val;
+                            if (typeof val === 'string') {
+                                var clean = val.trim();
+                                if (clean && isFinite(clean)) {
+                                     if (clean.charCodeAt(0) !== 48 || clean.length === 1 || clean.charCodeAt(1) === 46) {
+                                        val = Number(clean);
+                                    }
+                                }
+                            }
+                            if (typeof path === 'string') {
+                                if (scope) scope[path] = val;
+                            } else {
+                                var ctx = scope;
+                                var k = 0, kLen = path.length - 1;
+                                while (k < kLen && ctx) ctx = ctx[path[k++]];
+                                if (ctx) ctx[path[kLen]] = val;
                             }
                         } else {
-                            var result = evalPath(target._s, handler.path);
+                            var result = evalPath(scope, path);
                             if (typeof result.val === 'function') result.val.call(result.ctx, event);
                         }
                     }
@@ -311,21 +299,22 @@ var spiki = (() => {
             var directiveFor = !directiveIf && el.tagName === 'TEMPLATE' && el.getAttribute('s-for');
             var bindings = [];
 
+            if (el.hasAttribute('class') && !el._n) el._n = el.className;
+
             if (directiveIf) {
                 var end = document.createTextNode('');
                 var active = null;
                 var cBranch = [];
-                
                 el.replaceWith(end);
                 var negate = directiveIf[0] === '!';
                 var path = negate ? directiveIf.slice(1) : directiveIf;
+                var p = path.indexOf('.') === -1 ? path : path.split('.');
                 
-                parentCleanups.push(() => { cBranch.forEach(cleanup => cleanup()); });
+                parentCleanups.push(() => { cBranch.forEach(c => c()); });
                 
                 return parentCleanups.push(effect(() => {
-                    var show = evalPath(scope, path).val;
+                    var show = evalPath(scope, p).val;
                     if (negate) show = !show;
-                    
                     if (show) {
                         if (!active) {
                             active = el.cloneNode(true); 
@@ -334,40 +323,38 @@ var spiki = (() => {
                             end.parentNode.insertBefore(active, end);
                         }
                     } else if (active) {
-                        cBranch.forEach(cleanup => cleanup()); 
-                        cBranch = [];
-                        active.remove(); 
-                        active = null;
+                        cBranch.forEach(c => c()); cBranch = []; active.remove(); active = null;
                     }
                 }, nextTick));
             }
 
             if (directiveFor) {
-                var regexMatch = directiveFor.match(/^\s*(.*?)\s+in\s+(.+)\s*$/);
-                if (regexMatch) {
-                    var leftHandSide = regexMatch[1].split(',').map(s => s.trim().replace(/[()]/g, ''));
-                    var alias = leftHandSide[0];
-                    var idxAlias = leftHandSide[1];
-                    var listKey = regexMatch[2].trim();
+                var inIdx = directiveFor.indexOf(' in ');
+                if (inIdx !== -1) {
+                    var leftSide = directiveFor.slice(0, inIdx).trim();
+                    var listKey = directiveFor.slice(inIdx + 4).trim();
+                    var leftParts = leftSide.replace(/[()]/g, '').split(',');
+                    var alias = leftParts[0].trim();
+                    var idxAlias = leftParts[1] ? leftParts[1].trim() : null;
+                    var listPath = listKey.indexOf('.') === -1 ? listKey : listKey.split('.');
                     var keyAttr = el.getAttribute('s-key');
+                    var keyPath = keyAttr ? (keyAttr.indexOf('.') === -1 ? keyAttr : keyAttr.split('.')) : null;
+
                     var end = document.createTextNode('');
                     var nodePool = Object.create(null);
                     var usedKeys;
-                    
                     el.replaceWith(end);
 
                      parentCleanups.push(() => { 
-                          for(var key in nodePool) nodePool[key].cleanups.forEach(cleanup => cleanup()); 
+                          for(var k in nodePool) nodePool[k].cleanups.forEach(c => c()); 
                      });
 
                     return parentCleanups.push(effect(() => {
-                        var list = evalPath(scope, listKey).val || [];
+                        var list = evalPath(scope, listPath).val || [];
                         if (Array.isArray(list)) track(list, 'length');
-                        
                         var frag = document.createDocumentFragment();
                         var cursor = end;
                         usedKeys = Object.create(null);
-                        
                         var isArr = Array.isArray(list);
                         var keys = isArr ? list : Object.keys(list);
                         var len = isArr ? list.length : keys.length;
@@ -375,18 +362,12 @@ var spiki = (() => {
                         for (var i = 0; i < len; i++) {
                             var key = isArr ? i : keys[i];
                             var item = isArr ? list[i] : list[key];
-                            
                             var unique;
-                            if (item == null || typeof item !== 'object') {
-                                unique = String(item);
-                            } else if (keyAttr) {
-                                unique = evalPath(item, keyAttr).val;
-                            } else {
-                                unique = String(key) + '_o';
-                            }
+                            if (item == null || typeof item !== 'object') unique = String(item);
+                            else if (keyPath) unique = evalPath(item, keyPath).val;
+                            else unique = String(key) + '_o';
                             
                             if (usedKeys[unique]) unique += '_' + i;
-                            
                             var row = nodePool[unique];
                             if (row) {
                                 row.scope[alias] = item;
@@ -394,19 +375,13 @@ var spiki = (() => {
                             } else {
                                 var clone = el.content.cloneNode(true);
                                 var rowScope = makeReactive(Object.create(scope));
-                                
-                                rowScope[alias] = item; 
-                                if (idxAlias) rowScope[idxAlias] = key;
-                                
+                                rowScope[alias] = item; if (idxAlias) rowScope[idxAlias] = key;
                                 var rowNodes = Array.prototype.slice.call(clone.childNodes);
                                 var rowCleanups = [];
-                                
                                 for(var n=0; n<rowNodes.length; n++) walk(rowNodes[n], rowScope, rowCleanups);
-                                
                                 row = { nodes: rowNodes, scope: rowScope, cleanups: rowCleanups };
                                 nodePool[unique] = row;
                             }
-
                             if (row.nodes[0] !== cursor.nextSibling) {
                                 for(var n=0; n<row.nodes.length; n++) frag.appendChild(row.nodes[n]);
                                 cursor.parentNode.insertBefore(frag, cursor.nextSibling);
@@ -414,13 +389,10 @@ var spiki = (() => {
                             cursor = row.nodes[row.nodes.length-1];
                             usedKeys[unique] = true;
                         }
-
-                        for (var key in nodePool) {
-                            if (!usedKeys[key]) {
-                                nodePool[key].cleanups.forEach(cleanup => cleanup());
-                                for(var n=0; n<nodePool[key].nodes.length; n++) nodePool[key].nodes[n].remove();
-                                delete nodePool[key];
-                            }
+                        for (var k in nodePool) if (!usedKeys[k]) {
+                            nodePool[k].cleanups.forEach(c => c());
+                            nodePool[k].nodes.forEach(n => n.remove());
+                            delete nodePool[k];
                         }
                     }, nextTick));
                 }
@@ -428,45 +400,57 @@ var spiki = (() => {
 
             if (el.hasAttributes()) {
                 var attrs = el.attributes;
-                for (var i = 0; i < attrs.length; i++) {
-                    var attrName = attrs[i].name;
-                    var attrValue = attrs[i].value;
+                var i = attrs.length;
+                while (i--) {
+                    var attr = attrs[i];
+                    var attrName = attr.name;
+                    var attrValue = attr.value;
                     
-                    if (attrName[0] === ':') {
+                    if (attrName.charCodeAt(0) === 58) { 
                         var realName = attrName.slice(1);
-                        var neg = attrValue[0] === '!';
-                        bindings.push({ type: 'attr', name: realName, path: neg ? attrValue.slice(1) : attrValue, neg: neg });
-                    } else if (attrName.indexOf('s-') === 0) {
+                        var neg = attrValue.charCodeAt(0) === 33; 
+                        var rawPath = neg ? attrValue.slice(1) : attrValue;
+                        var p = rawPath.indexOf('.') === -1 ? rawPath : rawPath.split('.');
+                        bindings.push({ type: 'attr', name: realName, path: p, neg: neg });
+                    } 
+                    else if (attrName.charCodeAt(0) === 115 && attrName.charCodeAt(1) === 45) {
                         var type = attrName.slice(2);
+                        var p = attrValue.indexOf('.') === -1 ? attrValue : attrValue.split('.');
+
                         if (type === 'init' || type === 'destroy') {
                             ((type, path) => {
                                 var result = evalPath(scope, path);
                                 if (typeof result.val === 'function') {
-                                    if (type === 'init') {
-                                        nextTick(() => result.val.call(result.ctx, el));
-                                    } else {
-                                        parentCleanups.push(() => result.val.call(result.ctx, el));
-                                    }
+                                    if (type === 'init') nextTick(() => result.val.call(result.ctx, el));
+                                    else parentCleanups.push(() => result.val.call(result.ctx, el));
                                 }
-                            })(type, attrValue);
-                        } else if (type === 'model') {
-                             bindings.push({ type: 'value', path: attrValue });
-                             el._s = scope; 
-                             el._h = el._h || {};
-                             var evt = (el.type === 'checkbox' || el.type === 'radio' || el.tagName==='SELECT') 
-                                ? 'change' 
-                                : 'input';
-                                
-                             (el._h[evt] = el._h[evt] || []).unshift({ model: true, path: attrValue });
+                            })(type, p);
+                        }
+                        else if (type === 'effect') {
+                            parentCleanups.push(effect(() => {
+                                var res = evalPath(scope, p);
+                                if (typeof res.val === 'function') res.val.call(res.ctx, el);
+                            }, nextTick));
+                        }
+                        else if (type === 'model') {
+                             bindings.push({ type: 'value', path: p });
+                             el._s = scope; el._h = el._h || {};
+                             var evt = (el.type === 'checkbox' || el.type === 'radio' || el.tagName==='SELECT') ? 'change' : 'input';
+                             
+                             if (evt === 'input') {
+                                 el.addEventListener('compositionstart', () => el._c = true);
+                                 el.addEventListener('compositionend', () => { el._c = false; handle({target: el, type: 'input'}); });
+                             }
+
+                             (el._h[evt] = el._h[evt] || []).unshift({ model: true, p: p });
                              addListen(evt);
                         } else if (type === 'ref') {
                             state.$refs[attrValue] = el;
                         } else if (domOps[type]) {
-                            bindings.push({ type: type, path: attrValue });
+                            bindings.push({ type: type, path: p });
                         } else {
-                            el._s = scope; 
-                            el._h = el._h || {};
-                            (el._h[type] = el._h[type] || []).push({ path: attrValue });
+                            el._s = scope; el._h = el._h || {};
+                            (el._h[type] = el._h[type] || []).push({ p: p });
                             addListen(type);
                         }
                     }
@@ -475,18 +459,16 @@ var spiki = (() => {
 
             if (bindings.length) {
                 parentCleanups.push(effect(() => {
-                    for (var i = 0; i < bindings.length; i++) {
+                    var i = bindings.length;
+                    while (i--) {
                         var binding = bindings[i];
                         var result = evalPath(scope, binding.path);
                         var val = (result.val && typeof result.val === 'function') ? result.val.call(result.ctx, el) : result.val;
                         
                         if (binding.type === 'attr') {
                             if (binding.neg) val = !val;
-                            if (binding.name === 'class') {
-                                domOps.class(el, val);
-                            } else {
-                                domOps.attr(el, val, binding.name);
-                            }
+                            if (binding.name === 'class') domOps.class(el, val);
+                            else domOps.attr(el, val, binding.name);
                         } else {
                             domOps[binding.type](el, val);
                         }
@@ -508,7 +490,7 @@ var spiki = (() => {
         return {
             unmount: () => {
                 if (state.destroy) state.destroy.call(state);
-                cleanups.forEach(cleanup => cleanup());
+                cleanups.forEach(c => c());
                 for(var k in listeners) rootElement.removeEventListener(k, handle);
                 rootElement._m = false;
             }
@@ -519,7 +501,8 @@ var spiki = (() => {
         data: (name, factory) => { cmpReg[name] = factory; },
         start: () => {
             var els = document.querySelectorAll('[s-data]');
-            for(var i=0; i<els.length; i++) mount(els[i]);
+            var i = els.length;
+            while (i--) mount(els[i]);
         },
         store: (k, v) => v === undefined ? globalStore[k] : (globalStore[k] = v),
         raw: (o) => (o && o._p) || o
