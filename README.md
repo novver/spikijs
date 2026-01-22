@@ -18,7 +18,7 @@ It is designed to be simple, secure (CSP Compliant), and fast.
 ### Option 1: CDN (Browser)
 Simply add the script tag to your HTML.
 ```html
-<script src="[https://unpkg.com/spikijs](https://unpkg.com/spikijs)"></script>
+<script src="https://unpkg.com/spikijs"></script>
 
 ```
 
@@ -49,7 +49,7 @@ spiki.start();
     <button s-click="increment">Add +1</button>
 </div>
 
-<script src="[https://unpkg.com/spikijs](https://unpkg.com/spikijs)"></script>
+<script src="https://unpkg.com/spikijs"></script>
 <script>
     // 1. Register Component
     spiki.data('counterApp', function() {
@@ -135,7 +135,7 @@ Common use cases: `:src`, `:href`, `:disabled`, `:placeholder`, `:id`.
 <script>
 spiki.data('attrApp', function() {
     return {
-        avatarUrl: '[https://via.placeholder.com/150](https://via.placeholder.com/150)',
+        avatarUrl: 'https://via.placeholder.com/150',
         profileLink: '/profile/user1',
         isProcessing: true
     };
@@ -414,7 +414,7 @@ spiki.data('usersApp', function() {
         
         loadUsers: function() {
             var self = this;
-            fetch('[https://jsonplaceholder.typicode.com/users](https://jsonplaceholder.typicode.com/users)')
+            fetch('https://jsonplaceholder.typicode.com/users')
                 .then(function(r) { return r.json() })
                 .then(function(data) {
                     self.users = data;
