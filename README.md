@@ -47,7 +47,7 @@ spiki.start();
 <div s-data="counterApp">
     <h1>Count: <span s-text="count"></span></h1>
     <button s-click="increment">Add +1</button>
-    <button s-click="decrement">Remove +1</button>
+    <button s-click="decrement">Del -1</button>
 </div>
 
 <script src="https://unpkg.com/spikijs"></script>
