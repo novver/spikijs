@@ -214,12 +214,11 @@ var spiki = (() => {
     };
 
     var mount = (rootElement, parentScope) => {
-        if (rootElement._m) return;
+        if (rootElement._m) return rootElement._m;
         
         var name = rootElement.getAttribute('s-data');
         if (!cmpReg[name]) return;
 
-        rootElement._m = true;
         var data = cmpReg[name]();
         if (parentScope) Object.setPrototypeOf(data, parentScope);
         
@@ -418,7 +417,12 @@ var spiki = (() => {
                             ((type, path) => {
                                 var result = evalPath(scope, path);
                                 if (typeof result.val === 'function') {
-                                    if (type === 'init') nextTick(() => result.val.call(result.ctx, el));
+                                    if (type === 'init') {
+                                        nextTick(() => {
+                                            var cleanupFn = result.val.call(result.ctx, el);
+                                            if (typeof cleanupFn === 'function') parentCleanups.push(cleanupFn);
+                                        });
+                                    }
                                     else parentCleanups.push(() => result.val.call(result.ctx, el));
                                 }
                             })(type, p);
@@ -484,14 +488,16 @@ var spiki = (() => {
         walk(rootElement, state, cleanups);
         if (state.init) state.init();
 
-        return {
+        var instance = {
             unmount: () => {
                 if (state.destroy) state.destroy.call(state);
                 cleanups.forEach(c => c());
                 for(var k in listeners) rootElement.removeEventListener(k, handle);
-                rootElement._m = false;
+                rootElement._m = null;
             }
         };
+        rootElement._m = instance;
+        return instance;
     };
 
     return {
@@ -502,7 +508,9 @@ var spiki = (() => {
             while (i--) mount(els[i]);
         },
         store: (k, v) => v === undefined ? globalStore[k] : (globalStore[k] = v),
-        raw: (o) => (o && o._p) || o
+        raw: (o) => (o && o._p) || o,
+        mount: (el) => mount(el),
+        unmount: (el) => { if (el && el._m) el._m.unmount(); }
     };
 })();
 
