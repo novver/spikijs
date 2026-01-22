@@ -47,24 +47,26 @@ spiki.start();
 <div s-data="counterApp">
     <h1>Count: <span s-text="count"></span></h1>
     <button s-click="increment">Add +1</button>
+    <button s-click="decrement">Remove +1</button>
 </div>
 
 <script src="https://unpkg.com/spikijs"></script>
 <script>
-    // 1. Register Component
-    spiki.data('counterApp', function() {
-        return {
-            count: 0,
-            increment: function() {
-                this.count++;
-            }
-        };
-    });
+// 1. Register Component
+spiki.data('counterApp', ()=>({
+    count: 0,
+    increment() {
+        this.count++;
+    },
+    decrement() {
+        this.count--;
+    }
+}));
 
-    // 2. Start Spiki
-    document.addEventListener('DOMContentLoaded', function() {
-        spiki.start();
-    });
+// 2. Start Spiki
+document.addEventListener('DOMContentLoaded', ()=>{
+    spiki.start();
+});
 </script>
 
 ```
@@ -108,12 +110,10 @@ spiki.start();
 </div>
 
 <script>
-spiki.data('displayApp', function() {
-    return {
-        msg: 'Hello World',
-        rawHtml: '<b>Bold Text</b> and <i>Italic</i>'
-    };
-});
+spiki.data('displayApp', ()=>({
+    msg: 'Hello World',
+    rawHtml: '<b>Bold Text</b> and <i>Italic</i>'
+}));
 </script>
 
 ```
@@ -133,13 +133,11 @@ Common use cases: `:src`, `:href`, `:disabled`, `:placeholder`, `:id`.
 </div>
 
 <script>
-spiki.data('attrApp', function() {
-    return {
-        avatarUrl: 'https://via.placeholder.com/150',
-        profileLink: '/profile/user1',
-        isProcessing: true
-    };
-});
+spiki.data('attrApp', ()=>({
+    avatarUrl: 'https://via.placeholder.com/150',
+    profileLink: '/profile/user1',
+    isProcessing: true
+}));
 </script>
 
 ```
@@ -164,20 +162,18 @@ Spiki automatically passes the generic Event object to your function if you need
 </div>
 
 <script>
-spiki.data('eventApp', function() {
-    return {
-        alertMe: function() {
-            alert('Button Clicked!');
-        },
-        onHover: function(e) {
-            console.log('Mouse entered at:', e.clientX, e.clientY);
-        },
-        saveData: function(e) {
-            e.preventDefault(); // Stop page reload
-            console.log('Form Submitted');
-        }
-    };
-});
+spiki.data('eventApp', ()=>({
+    alertMe() {
+        alert('Button Clicked!');
+    },
+    onHover(e) {
+        console.log('Mouse entered at:', e.clientX, e.clientY);
+    },
+    saveData(e) {
+        e.preventDefault(); // Stop page reload
+        console.log('Form Submitted');
+    }
+}));
 </script>
 
 ```
@@ -197,15 +193,13 @@ spiki.data('eventApp', function() {
 </div>
 
 <script>
-spiki.data('formApp', function() {
-    return {
-        username: 'john_doe',
-        
-        get previewName() {
-            return this.username.toUpperCase();
-        }
-    };
-});
+spiki.data('formApp', ()=>({
+    username: 'john_doe',
+    
+    get previewName() {
+        return this.username.toUpperCase();
+    }
+}));
 </script>
 
 ```
@@ -221,14 +215,12 @@ If the value is `false`, the element is completely removed from the DOM.
 </div>
 
 <script>
-spiki.data('toggleApp', function() {
-    return {
-        isOpen: true,
-        toggle: function() {
-            this.isOpen = !this.isOpen;
-        }
-    };
-});
+spiki.data('toggleApp', ()=>({
+    isOpen: true,
+    toggle() {
+        this.isOpen = !this.isOpen;
+    }
+}));
 </script>
 
 ```
@@ -244,20 +236,18 @@ Bind CSS classes using a variable (getter) that returns an object.
 </div>
 
 <script>
-spiki.data('styleApp', function() {
-    return {
-        isError: false,
-        toggle: function() { this.isError = !this.isError; },
-        
-        // Getter returns: { 'class-name': boolean }
-        get boxClass() {
-            return {
-                'bg-red': this.isError,
-                'bg-blue': !this.isError
-            };
-        }
-    };
-});
+spiki.data('styleApp', ()=>({
+    isError: false,
+    toggle() { this.isError = !this.isError; },
+    
+    // Getter returns: { 'class-name': boolean }
+    get boxClass() {
+        return {
+            'bg-red': this.isError,
+            'bg-blue': !this.isError
+        };
+    }
+}));
 </script>
 
 ```
@@ -301,18 +291,16 @@ When you trigger an event inside a loop (like a click), Spiki automatically inje
 </div>
 
 <script>
-spiki.data('shopApp', function() {
-    return {
-        products: [
-            { id: 1, name: 'Laptop' },
-            { id: 2, name: 'Phone' }
-        ],
-        selectProduct: function() {
-            // 'this.product' is automatically available
-            console.log('You selected:', this.product.name);
-        }
-    };
-});
+spiki.data('shopApp', ()=>({
+    products: [
+        { id: 1, name: 'Laptop' },
+        { id: 2, name: 'Phone' }
+    ],
+    selectProduct() {
+        // 'this.product' is automatically available
+        console.log('You selected:', this.product.name);
+    }
+}));
 </script>
 
 ```
@@ -330,7 +318,7 @@ You can get the current index by using parentheses: `(item, index) in array`.
 
 <script>
 // Inside your JS:
-remove: function() {
+remove() {
     // 'this.i' is automatically available
     this.list.splice(this.i, 1);
 }
@@ -353,18 +341,16 @@ Use `s-effect` to run a function automatically whenever its dependencies change 
 </div>
 
 <script>
-spiki.data('saveApp', function() {
-    return {
-        note: localStorage.getItem('note') || '',
-        status: '',
-        
-        autoSave: function() {
-            // Spiki automatically tracks 'this.note' usage here
-            localStorage.setItem('note', this.note);
-            this.status = 'Saved!';
-        }
-    };
-});
+spiki.data('saveApp', ()=>({
+    note: localStorage.getItem('note') || '',
+    status: '',
+    
+    autoSave() {
+        // Spiki automatically tracks 'this.note' usage here
+        localStorage.setItem('note', this.note);
+        this.status = 'Saved!';
+    }
+}));
 </script>
 
 ```
@@ -380,14 +366,12 @@ Sometimes you need to access the raw DOM element (e.g., to focus an input or pla
 </div>
 
 <script>
-spiki.data('refApp', function() {
-    return {
-        focusMe: function() {
-            // Access DOM element via this.$refs
-            this.$refs.myInput.focus();
-        }
-    };
-});
+spiki.data('refApp', ()=>({
+    focusMe() {
+        // Access DOM element via this.$refs
+        this.$refs.myInput.focus();
+    }
+}));
 </script>
 
 ```
@@ -407,22 +391,20 @@ Use `s-init` to load data when the component mounts.
 </div>
 
 <script>
-spiki.data('usersApp', function() {
-    return {
-        isLoading: true,
-        users: [],
-        
-        loadUsers: function() {
-            var self = this;
-            fetch('https://jsonplaceholder.typicode.com/users')
-                .then(function(r) { return r.json() })
-                .then(function(data) {
-                    self.users = data;
-                    self.isLoading = false;
-                });
-        }
-    };
-});
+spiki.data('usersApp', ()=>({
+    isLoading: true,
+    users: [],
+    
+    loadUsers() {
+        var self = this;
+        fetch('https://jsonplaceholder.typicode.com/users')
+            .then(function(r) { return r.json() })
+            .then(function(data) {
+                self.users = data;
+                self.isLoading = false;
+            });
+    }
+}));
 </script>
 
 ```
@@ -466,25 +448,23 @@ Inside your functions, `this` refers to your component state. Spiki also injects
 Define these special methods to run code at specific times.
 
 ```javascript
-spiki.data('clockApp', function() {
-    return {
-        time: new Date().toLocaleTimeString(),
-        timerId: null,
+spiki.data('clockApp', ()=>({
+    time: new Date().toLocaleTimeString(),
+    timerId: null,
 
-        // Runs when component is mounted
-        init: function() {
-            var self = this;
-            this.timerId = setInterval(function() {
-                self.time = new Date().toLocaleTimeString();
-            }, 1000);
-        },
+    // Runs when component is mounted
+    init() {
+        var self = this;
+        this.timerId = setInterval(function() {
+            self.time = new Date().toLocaleTimeString();
+        }, 1000);
+    },
 
-        // Runs when component is removed
-        destroy: function() {
-            clearInterval(this.timerId);
-        }
-    };
-});
+    // Runs when component is removed
+    destroy() {
+        clearInterval(this.timerId);
+    }
+}));
 
 ```
 
@@ -500,13 +480,11 @@ spiki.store('user', {
 });
 
 // 2. Use in Component
-spiki.data('profile', function() {
-    return {
-        get userName() {
-            return this.$store.user.name; // Reactive!
-        }
-    };
-});
+spiki.data('profile', ()=>({
+    get userName() {
+        return this.$store.user.name; // Reactive!
+    }
+}));
 
 ```
 
