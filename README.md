@@ -4,7 +4,7 @@
 
 ## Key Features
 
-*   **~2.5 KB (Gzip):** Tiny footprint, no build step required.
+*   **~5 KB (Gzip):** Tiny footprint, no build step required.
 
 *   **Zero Inline Logic:** Compliant with strict Content Security Policies (CSP). HTML contains only bindings; JS contains logic.
 
