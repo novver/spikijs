@@ -42,13 +42,13 @@ spiki.start();
 
 ### Option 3: Manual Mount
 
-For content loaded via AJAX, you can mount and unmount components manually to manage memory.
+You can mount and unmount components manually to manage memory.
 
 ```javascript
 import spiki from 'spikijs';
 
 // 1. Select the DOM element
-const container = document.getElementById('dynamic-component');
+const container = document.getElementById('app');
 
 // 2. Mount Spiki to this specific element
 const component = spiki.mount(container);
