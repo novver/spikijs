@@ -112,7 +112,7 @@ const component = spiki.mount(container);
 | **`s-effect`** | Runs function on data change. | `<div s-effect="autoSave">` |
 | **`s-ref`** | Stores DOM reference in `$refs`. | `<input s-ref="myInput">` |
 | **`s-init`** | Runs on mount. | `<div s-init="onLoad">` |
-| **`s-destroy`** | Runs on unmount. | `<div s-init="onRemove">` |
+| **`s-destroy`** | Runs on unmount. | `<div s-destroy="onRemove">` |
 | **`s-ignore`** | Skips compilation (Static content). | `<div s-ignore>` |
 | **`:[attr]`** | Dynamic attribute binding. | `<img :src="imgUrl">` |
 | **`:class`** | Dynamic class toggling. | `<div :class="classConfig">` |
