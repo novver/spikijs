@@ -13,9 +13,9 @@ It is designed to be simple, secure (CSP Compliant), and fast.
 
 ---
 
-## Installation & Usage
+## Installation
 
-### Option 1: CDN (Browser)
+### CDN (Browser)
 Simply add the script tag to your HTML. Spiki will automatically attach to `window.spiki`.
 
 ```html
@@ -23,7 +23,7 @@ Simply add the script tag to your HTML. Spiki will automatically attach to `wind
 
 ```
 
-### Option 2: NPM (Module)
+### NPM (Module)
 
 Install via package manager.
 
@@ -32,30 +32,80 @@ npm install spikijs
 
 ```
 
+---
+
+## Usage Strategies
+
+Choose the initialization method that fits your architecture.
+
+### Automatic
+
+Best for Multi-Page Applications (MPA) or simple websites. Spiki scans the entire document for `s-data` attributes.
+
+**HTML:**
+
+```html
+<div s-data="counterApp">
+    Count: <span s-text="count"></span>
+    <button s-click="increment">+</button>
+</div>
+
+```
+
+**JavaScript:**
+
 ```javascript
 import spiki from 'spikijs';
 
-// Automatically mount all elements with 's-data'
+// 1. Register Component
+spiki.data('counterApp', () => ({
+    count: 0,
+    increment() {
+        this.count++;
+    }
+}));
+
+// 2. Start Engine (Scans the whole body)
 spiki.start();
 
 ```
 
-#### Manual Mount
+### Manual Mount
 
-You can mount and unmount components manually to manage memory.
+You control exactly *when* and *where* Spiki starts, and crucially, when it stops to free memory.
+
+**HTML:**
+
+```html
+<div id="my-widget" s-data="counterApp">
+    Count: <span s-text="count"></span>
+    <button s-click="increment">+</button>
+</div>
+
+```
+
+**JavaScript:**
 
 ```javascript
 import spiki from 'spikijs';
 
-// 1. Select the DOM element
-const container = document.getElementById('app');
+// 1. Register Component logic
+spiki.data('counterApp', () => ({
+    count: 0,
+    increment() {
+        this.count++;
+    }
+}));
 
-// 2. Mount Spiki to this specific element
-const component = spiki.mount(container);
+// 2. Select the DOM element
+const myWidget = document.getElementById('my-widget');
 
+// 3. Mount Spiki to this specific element
+const counterApp = spiki.mount(myWidget);
 
-// 3. Unmount to free memory (Stop watchers and event listeners)
-// component.unmount();
+// ... later when removing the element or changing pages ...
+// 4. Unmount to free memory (Stop watchers and event listeners)
+// counterApp.unmount();
 
 ```
 
