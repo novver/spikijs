@@ -40,7 +40,7 @@ spiki.start();
 
 ```
 
-### Option 3: Manual Mount
+#### Manual Mount
 
 You can mount and unmount components manually to manage memory.
 
