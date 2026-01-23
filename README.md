@@ -40,7 +40,7 @@ Choose the initialization method that fits your architecture.
 
 ### Automatic
 
-Best for Multi-Page Applications (MPA) or simple websites. Spiki scans the entire document for `s-data` attributes.
+Best for simple websites. Spiki scans the entire document for `s-data` attributes.
 
 **HTML:**
 
