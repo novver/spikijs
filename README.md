@@ -167,6 +167,10 @@ const counterApp = spiki.mount(myWidget);
 | **`:[attr]`** | Dynamic attribute binding. | `<img :src="imgUrl">` |
 | **`:class`** | Dynamic class toggling. | `<div :class="classConfig">` |
 | **`s-[event]`** | Event listener. | `<button s-click="save">` |
+| **`this.$root`** | Access the root elm. | `this.$root.classList.add('loaded');` |
+| **`this.$store`** | Access the global store. | `this.$store.theme` |
+| **`spiki.store()`** | Get or set global store. | `spiki.store('theme', 'dark')` |
+| **`spiki.raw()`** | Proxy to original object. | `spiki.raw(this.users)` |
 
 ---
 
