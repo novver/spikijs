@@ -277,7 +277,13 @@ var spiki = (() => {
                             }
                         } else {
                             var result = evalPath(scope, path);
-                            if (typeof result.val === 'function') result.val.call(result.ctx, event);
+                            if (typeof result.val === 'function') {
+                                Object.defineProperty(event, 'currentTarget', {
+                                    configurable: true,
+                                    value: target
+                                });
+                                result.val.call(result.ctx, event);
+                            }
                         }
                     }
                 }
