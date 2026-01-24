@@ -27,7 +27,7 @@ var spiki = (() => {
                     var i = queue.length;
                     while (i--) {
                         queue[i]._q = false;
-                        try { queue[i](); } catch (e) { console.error(e); }
+                        queue[i]();
                     }
                 });
             }
@@ -45,6 +45,10 @@ var spiki = (() => {
                 ctx = ctx[path[i++]];
             }
             val = ctx ? ctx[path[len - 1]] : undefined;
+        }
+        if (val === undefined) {
+            var displayPath = Array.isArray(path) ? path.join('.') : path;
+            console.warn('Property undefined:' + displayPath);
         }
         return { ctx: ctx, val: val };
     };
@@ -92,7 +96,10 @@ var spiki = (() => {
         while (i--) {
             var list = runner.deps[i];
             var idx = list.indexOf(runner);
-            if (idx !== -1) { list[idx] = list[list.length - 1]; list.pop(); }
+            if (idx !== -1) { 
+                list[idx] = list[list.length - 1]; 
+                list.pop(); 
+            }
         }
         runner.deps = [];
     };
@@ -119,21 +126,26 @@ var spiki = (() => {
                 if (key === '_y') return true;
                 if (key === '_t') return target;
                 if (key === '_d') return target._d;
-                if (key === '_isRow') return target._isRow;
+                if (key === '_i') return target._i;
+
                 if (Array.isArray(target) && arrInst.hasOwnProperty(key)) return arrInst[key];
-                
+                var desc = Object.getOwnPropertyDescriptor(target, key);
+                if (desc && desc.get) {
+                    var cacheKey = '_' + key;
+                    if (!(cacheKey in target)) effect(() => receiver[cacheKey] = desc.get.call(receiver));
+                    return receiver[cacheKey];
+                }
                 track(target, key);
                 var res = Reflect.get(target, key, receiver);
                 return (res && typeof res === 'object' && !(res instanceof Node)) ? makeReactive(res) : res;
             },
-
             set: (target, key, val, receiver) => {
                 var old = target[key];
                 var isArr = Array.isArray(target);
                 var hadKey = isArr ? Number(key) < target.length : Object.prototype.hasOwnProperty.call(target, key);
-
-                if (target._isRow && !hadKey) {
-                     var proto = Object.getPrototypeOf(target);
+                
+                if (target._i && !hadKey) {
+                    var proto = Object.getPrototypeOf(target);
                      while (proto && proto !== Object.prototype) {
                         if (Object.prototype.hasOwnProperty.call(proto, key)) {
                             var res = Reflect.set(proto, key, val);
@@ -155,8 +167,13 @@ var spiki = (() => {
                 return res;
             },
             deleteProperty: (target, key) => {
+                var hadKey = Object.prototype.hasOwnProperty.call(target, key);
                 var res = Reflect.deleteProperty(target, key);
-                if (res) trigger(target, key);
+                if (res && hadKey) {
+                    trigger(target, key);
+                    if (Array.isArray(target)) trigger(target, 'length');
+                    else trigger(target, '_k');
+                }
                 return res;
             },
             ownKeys: (target) => {
@@ -165,7 +182,7 @@ var spiki = (() => {
             }
         });
         
-        Object.defineProperty(obj, '_p', { value: proxy, enumerable: false });
+        Object.defineProperty(obj, '_p', { value: proxy });
         return proxy;
     };
 
@@ -175,22 +192,33 @@ var spiki = (() => {
     // 3. DOM & COMPONENT ENGINE
     // -------------------------------------------------------------------------
     var domOps = Object.create(null);
-    domOps.text = (el, val) => { el.textContent = (val == null ? '' : val); };
-    domOps.html = (el, val) => { if (el.innerHTML != val) el.innerHTML = (val == null ? '' : val); };
+    domOps.text = (el, val) => { 
+        val = val == null ? '' : val;
+        if (el.textContent !== String(val)) el.textContent = val;
+    };
+    domOps.html = (el, val) => { 
+        if (el.innerHTML != val) el.innerHTML = val == null ? '' : val; 
+    };
     domOps.value = (el, val) => {
         if (el.type === 'checkbox') el.checked = !!val;
         else if (el.type === 'radio') el.checked = (el.value == val);
-        else el.value = (val == null ? '' : val);
+        else if (el.value != val) el.value = val == null ? '' : val;
     };
     domOps.attr = (el, val, name) => {
         if (val == null || val === false) el.removeAttribute(name);
-        else el.setAttribute(name, val === true ? '' : val);
+        else {
+            var str = val === true ? '' : String(val);
+            if (el.getAttribute(name) !== str) el.setAttribute(name, str);
+        }
     };
     domOps.class = (el, val) => {
         var base = el._n || '';
         var dyn = '';
-        if (typeof val === 'string') dyn = val;
-        else if (val) for (var k in val) if (val[k]) dyn += (dyn ? ' ' : '') + k;
+        if (typeof val === 'string') {
+            dyn = val;
+        } else if (val) {
+            for (var k in val) if (val[k]) dyn += (dyn ? ' ' : '') + k;
+        }
         var res = base + (base && dyn ? ' ' : '') + dyn;
         if (el.className !== res) el.className = res;
     };
@@ -205,39 +233,51 @@ var spiki = (() => {
         if (parentScope) Object.setPrototypeOf(data, parentScope);
         
         var state = makeReactive(data);
-        state.$refs = {}; state.$root = rootElement; state.$store = globalStore; state.$nextTick = nextTick;
-
+        state.$refs = {}; 
+        state.$root = rootElement; 
+        state.$store = globalStore; 
+        state.$parent = parentScope;
+        
         var cleanups = [];
         var listeners = Object.create(null);
 
         var handle = (event) => {
             var target = event.target;
             if (event.type === 'input' && target._c) return;
+            var limit = rootElement.parentNode;
             var type = event.type; 
         
-            while (target && target !== rootElement.parentNode) {
+            while (target && target !== limit) {
                 var handlers = target._h && target._h[type];
+                
                 if (handlers) {
                     var scope = target._s; 
                     var i = handlers.length;
                     while (i--) {
                         var handler = handlers[i];
+                        var path = handler.p;
+        
                         if (handler.model) {
                             var val = target.type === 'checkbox' ? target.checked : target.value;
                             if (typeof val === 'string') {
                                 var clean = val.trim();
-                                if (clean && isFinite(clean) && !(clean.length>1 && clean[0]==='0')) val = Number(clean);
+                                if (clean && isFinite(clean)) {
+                                     if (clean.charCodeAt(0) !== 48 || clean.length === 1 || clean.charCodeAt(1) === 46) {
+                                        val = Number(clean);
+                                    }
+                                }
                             }
-                            var res = evalPath(scope, handler.p);
-                            if (res.ctx) {
-                                var prop = (res.val === scope[handler.p]) ? handler.p : handler.p[handler.p.length - 1];
-                                res.ctx[prop] = val;
+                            if (typeof path === 'string') {
+                                if (scope) scope[path] = val;
+                            } else {
+                                var ctx = scope;
+                                var k = 0, kLen = path.length - 1;
+                                while (k < kLen && ctx) ctx = ctx[path[k++]];
+                                if (ctx) ctx[path[kLen]] = val;
                             }
                         } else {
-                            var result = evalPath(scope, handler.p);
-                            if (typeof result.val === 'function') {
-                                try { result.val.call(result.ctx, event); } catch (e) { console.error(e); }
-                            }
+                            var result = evalPath(scope, path);
+                            if (typeof result.val === 'function') result.val.call(result.ctx, event);
                         }
                     }
                 }
@@ -246,7 +286,10 @@ var spiki = (() => {
         };
 
         var addListen = (type) => {
-            if (!listeners[type]) { listeners[type] = true; rootElement.addEventListener(type, handle); }
+            if (!listeners[type]) { 
+                listeners[type] = true; 
+                rootElement.addEventListener(type, handle); 
+            }
         };
 
         var walk = (el, scope, parentCleanups) => {
@@ -266,7 +309,8 @@ var spiki = (() => {
 
             if (directiveIf) {
                 var end = document.createTextNode('');
-                var active = null, cBranch = [];
+                var active = null;
+                var cBranch = [];
                 el.replaceWith(end);
                 var negate = directiveIf[0] === '!';
                 var path = negate ? directiveIf.slice(1) : directiveIf;
@@ -291,75 +335,77 @@ var spiki = (() => {
             }
 
             if (directiveFor) {
-                var parts = directiveFor.split(' in ');
-                var alias = parts[0].replace(/[()]/g, '').split(',').map(s=>s.trim());
-                var listKey = parts[1].trim();
-                var listPath = listKey.split('.');
-                var keyAttr = el.getAttribute('s-key');
-                var keyPath = keyAttr ? keyAttr.split('.') : null;
+                var inIdx = directiveFor.indexOf(' in ');
+                if (inIdx !== -1) {
+                    var leftSide = directiveFor.slice(0, inIdx).trim();
+                    var listKey = directiveFor.slice(inIdx + 4).trim();
+                    var leftParts = leftSide.replace(/[()]/g, '').split(',');
+                    var alias = leftParts[0].trim();
+                    var idxAlias = leftParts[1] ? leftParts[1].trim() : null;
+                    var listPath = listKey.indexOf('.') === -1 ? listKey : listKey.split('.');
+                    var keyAttr = el.getAttribute('s-key');
+                    var keyPath = keyAttr ? (keyAttr.indexOf('.') === -1 ? keyAttr : keyAttr.split('.')) : null;
 
-                var end = document.createTextNode('');
-                var nodePool = Object.create(null);
-                var usedKeys;
-                el.replaceWith(end);
+                    var end = document.createTextNode('');
+                    var nodePool = Object.create(null);
+                    var usedKeys;
+                    el.replaceWith(end);
 
-                parentCleanups.push(() => { 
-                    for(var k in nodePool) nodePool[k].cleanups.forEach(c => c()); 
-                });
+                     parentCleanups.push(() => { 
+                          for(var k in nodePool) nodePool[k].cleanups.forEach(c => c()); 
+                     });
 
-                return parentCleanups.push(effect(() => {
-                    var list = evalPath(scope, listPath).val || [];
-                    if (Array.isArray(list)) track(list, 'length');
-                    var frag = document.createDocumentFragment();
-                    var cursor = end;
-                    usedKeys = Object.create(null);
-                    var isArr = Array.isArray(list);
-                    var keys = isArr ? list : Object.keys(list);
-                    var len = isArr ? list.length : keys.length;
+                    return parentCleanups.push(effect(() => {
+                        var list = evalPath(scope, listPath).val || [];
+                        if (Array.isArray(list)) track(list, 'length');
+                        var frag = document.createDocumentFragment();
+                        var cursor = end;
+                        usedKeys = Object.create(null);
+                        var isArr = Array.isArray(list);
+                        var keys = isArr ? list : Object.keys(list);
+                        var len = isArr ? list.length : keys.length;
 
-                    for (var i = 0; i < len; i++) {
-                        var key = isArr ? i : keys[i];
-                        var item = isArr ? list[i] : list[key];
-                        var unique;
-                        
-                        if (keyPath) unique = evalPath(item, keyPath).val;
-                        else unique = (typeof item === 'object' ? key : item) + '_' + i;
-                        
-                        var row = nodePool[unique];
-                        if (row) {
-                            row.scope[alias[0]] = item;
-                            if (alias[1]) row.scope[alias[1]] = key;
-                        } else {
-                            var clone = el.content.cloneNode(true);
+                        for (var i = 0; i < len; i++) {
+                            var key = isArr ? i : keys[i];
+                            var item = isArr ? list[i] : list[key];
+                            var unique;
+                            if (item == null || typeof item !== 'object') unique = String(item);
+                            else if (keyPath) unique = evalPath(item, keyPath).val;
+                            else unique = String(key) + '_o';
                             
-                            var rData = Object.create(scope);
-                            Object.defineProperty(rData, '_isRow', { value: true });
-                            
-                            var rowScope = makeReactive(rData);
-                            rowScope[alias[0]] = item; 
-                            if (alias[1]) rowScope[alias[1]] = key;
-
-                            var rowNodes = Array.prototype.slice.call(clone.childNodes);
-                            var rowCleanups = [];
-                            
-                            for (var n = 0; n < rowNodes.length; n++) walk(rowNodes[n], rowScope, rowCleanups);
-                            
-                            row = { nodes: rowNodes, scope: rowScope, cleanups: rowCleanups };
-                            nodePool[unique] = row;
+                            if (usedKeys[unique]) unique += '_' + i;
+                            var row = nodePool[unique];
+                            if (row) {
+                                row.scope[alias] = item;
+                                if (idxAlias) row.scope[idxAlias] = key;
+                            } else {
+                                var clone = el.content.cloneNode(true);
+                                
+                                var rowData = Object.create(scope);
+                                Object.defineProperty(rowData, '_i', { value: true });
+                                var rowScope = makeReactive(rowData);
+                                
+                                rowScope[alias] = item; if (idxAlias) rowScope[idxAlias] = key;
+                                var rowNodes = Array.prototype.slice.call(clone.childNodes);
+                                var rowCleanups = [];
+                                for(var n=0; n<rowNodes.length; n++) walk(rowNodes[n], rowScope, rowCleanups);
+                                row = { nodes: rowNodes, scope: rowScope, cleanups: rowCleanups };
+                                nodePool[unique] = row;
+                            }
+                            if (row.nodes[0] !== cursor.nextSibling) {
+                                for(var n=0; n<row.nodes.length; n++) frag.appendChild(row.nodes[n]);
+                                cursor.parentNode.insertBefore(frag, cursor.nextSibling);
+                            }
+                            cursor = row.nodes[row.nodes.length-1];
+                            usedKeys[unique] = true;
                         }
-                        if (row.nodes[0] !== cursor.nextSibling) {
-                            for (var n = 0; n < row.nodes.length; n++) frag.appendChild(row.nodes[n]);
-                            cursor.parentNode.insertBefore(frag, cursor.nextSibling);
+                        for (var k in nodePool) if (!usedKeys[k]) {
+                            nodePool[k].cleanups.forEach(c => c());
+                            nodePool[k].nodes.forEach(n => n.remove());
+                            delete nodePool[k];
                         }
-                        cursor = row.nodes[row.nodes.length-1];
-                        usedKeys[unique] = true;
-                    }
-                    for (var k in nodePool) if (!usedKeys[k]) {
-                        nodePool[k].cleanups.forEach(c => c());
-                        nodePool[k].nodes.forEach(n => n.remove());
-                        delete nodePool[k];
-                    }
-                }, nextTick));
+                    }, nextTick));
+                }
             }
 
             if (el.hasAttributes()) {
@@ -374,14 +420,34 @@ var spiki = (() => {
                         var realName = attrName.slice(1);
                         var neg = attrValue.charCodeAt(0) === 33; 
                         var rawPath = neg ? attrValue.slice(1) : attrValue;
-                        var p = rawPath.split('.');
+                        var p = rawPath.indexOf('.') === -1 ? rawPath : rawPath.split('.');
                         bindings.push({ type: 'attr', name: realName, path: p, neg: neg });
                     } 
                     else if (attrName.charCodeAt(0) === 115 && attrName.charCodeAt(1) === 45) {
                         let type = attrName.slice(2);
                         let p = attrValue.indexOf('.') === -1 ? attrValue : attrValue.split('.');
 
-                        if (type === 'model') {
+                        if (type === 'init' || type === 'destroy') {
+                            ((type, path) => {
+                                var result = evalPath(scope, path);
+                                if (typeof result.val === 'function') {
+                                    if (type === 'init') {
+                                        nextTick(() => {
+                                            var cleanupFn = result.val.call(result.ctx, el);
+                                            if (typeof cleanupFn === 'function') parentCleanups.push(cleanupFn);
+                                        });
+                                    }
+                                    else parentCleanups.push(() => result.val.call(result.ctx, el));
+                                }
+                            })(type, p);
+                        }
+                        else if (type === 'effect') {
+                            parentCleanups.push(effect(() => {
+                                var res = evalPath(scope, p);
+                                if (typeof res.val === 'function') res.val.call(res.ctx, el);
+                            }, nextTick));
+                        }
+                        else if (type === 'model') {
                              bindings.push({ type: 'value', path: p });
                              el._s = scope; el._h = el._h || {};
                              var evt = (el.type === 'checkbox' || el.type === 'radio' || el.tagName==='SELECT') ? 'change' : 'input';
@@ -393,11 +459,11 @@ var spiki = (() => {
 
                              (el._h[evt] = el._h[evt] || []).unshift({ model: true, p: p });
                              addListen(evt);
-                        } else if (domOps[type]) {
-                            bindings.push({ type: type, path: p });
                         } else if (type === 'ref') {
                             state.$refs[attrValue] = el;
-                        } else if (type !== 'data' && type !== 'key' && type !== 'ignore') {
+                        } else if (domOps[type]) {
+                            bindings.push({ type: type, path: p });
+                        } else {
                             el._s = scope; el._h = el._h || {};
                             (el._h[type] = el._h[type] || []).push({ p: p });
                             addListen(type);
@@ -415,9 +481,9 @@ var spiki = (() => {
                         var val = (typeof result.val === 'function') ? result.val.call(result.ctx, el) : result.val;
                         
                         if (binding.type === 'attr') {
-                            domOps.attr(el, binding.neg ? !val : val, binding.name);
-                        } else if (binding.type === 'value') {
-                            domOps.value(el, val);
+                            if (binding.neg) val = !val;
+                            if (binding.name === 'class') domOps.class(el, val);
+                            else domOps.attr(el, val, binding.name);
                         } else {
                             domOps[binding.type](el, val);
                         }
