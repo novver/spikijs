@@ -129,6 +129,8 @@ var spiki = (() => {
                 if (key === '_y') return true;
                 if (key === '_t') return target;
                 if (key === '_d') return target._d;
+                if (key === '_i') return target._i;
+
                 if (Array.isArray(target) && arrInst.hasOwnProperty(key)) return arrInst[key];
                 var desc = Object.getOwnPropertyDescriptor(target, key);
                 if (desc && desc.get) {
@@ -144,7 +146,8 @@ var spiki = (() => {
                 var old = target[key];
                 var isArr = Array.isArray(target);
                 var hadKey = isArr ? Number(key) < target.length : Object.prototype.hasOwnProperty.call(target, key);
-                if (!isArr && !hadKey) {
+                
+                if (target._i && !hadKey) {
                     var proto = Object.getPrototypeOf(target);
                      while (proto && proto !== Object.prototype) {
                         if (Object.prototype.hasOwnProperty.call(proto, key)) {
@@ -155,6 +158,7 @@ var spiki = (() => {
                         proto = Object.getPrototypeOf(proto);
                     }
                 }
+
                 var res = Reflect.set(target, key, val, receiver);
                 if (!pauseTracking && res) {
                     if (!hadKey || val !== old) {
@@ -181,7 +185,7 @@ var spiki = (() => {
             }
         });
         
-        Object.defineProperty(obj, '_p', { value: proxy, enumerable: false });
+        Object.defineProperty(obj, '_p', { value: proxy });
         return proxy;
     };
 
@@ -379,7 +383,11 @@ var spiki = (() => {
                                 if (idxAlias) row.scope[idxAlias] = key;
                             } else {
                                 var clone = el.content.cloneNode(true);
-                                var rowScope = makeReactive(Object.create(scope));
+                                
+                                var rowData = Object.create(scope);
+                                Object.defineProperty(rowData, '_i', { value: true });
+                                var rowScope = makeReactive(rowData);
+                                
                                 rowScope[alias] = item; if (idxAlias) rowScope[idxAlias] = key;
                                 var rowNodes = Array.prototype.slice.call(clone.childNodes);
                                 var rowCleanups = [];
@@ -473,7 +481,7 @@ var spiki = (() => {
                     while (i--) {
                         var binding = bindings[i];
                         var result = evalPath(scope, binding.path);
-                        var val = (result.val && typeof result.val === 'function') ? result.val.call(result.ctx, el) : result.val;
+                        var val = (typeof result.val === 'function') ? result.val.call(result.ctx, el) : result.val;
                         
                         if (binding.type === 'attr') {
                             if (binding.neg) val = !val;
