@@ -17,6 +17,17 @@ var spiki = (() => {
     var globalStore;
     var resolved = Promise.resolve();
 
+    var captureEvents = {
+        blur: 1,
+        focus: 1, 
+        scroll: 1, 
+        load: 1,
+        error: 1,
+        mouseenter: 1,
+        mouseleave: 1,
+        toggle: 1
+    };
+
     var nextTick = (fn) => {
         if (!fn._q) {
             fn._q = true;
@@ -51,7 +62,7 @@ var spiki = (() => {
         }
         if (val === undefined) {
             var displayPath = Array.isArray(path) ? path.join('.') : path;
-            console.warn('Property undefined:' + displayPath);
+            console.warn('[spikijs] Property undefined: ' + displayPath);
         }
         return { ctx: ctx, val: val };
     };
@@ -254,7 +265,11 @@ var spiki = (() => {
                 var handlers = target._h && target._h[type];
                 
                 if (handlers) {
-                    var scope = target._s; 
+                    var scope = target._s;
+                    if (!scope || scope.$root !== state.$root) {
+                        target = target.parentNode;
+                        continue;
+                    }
                     var i = handlers.length;
                     while (i--) {
                         var handler = handlers[i];
@@ -280,7 +295,13 @@ var spiki = (() => {
                             }
                         } else {
                             var result = evalPath(scope, path);
-                            if (typeof result.val === 'function') result.val.call(result.ctx, event);
+                            if (typeof result.val === 'function') {
+                                Object.defineProperty(event, 'currentTarget', {
+                                    configurable: true,
+                                    value: target
+                                });
+                                result.val.call(result.ctx, event);
+                            }
                         }
                     }
                 }
@@ -289,9 +310,9 @@ var spiki = (() => {
         };
 
         var addListen = (type) => {
-            if (!listeners[type]) { 
-                listeners[type] = true; 
-                rootElement.addEventListener(type, handle); 
+            if (!listeners[type]) {
+                listeners[type] = true;
+                rootElement.addEventListener(type, handle, !!captureEvents[type]);
             }
         };
 
