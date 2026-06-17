@@ -547,7 +547,17 @@ var spiki = (() => {
             var i = els.length;
             while (i--) mount(els[i]);
         },
-        store: (k, v) => v === undefined ? globalStore[k] : (globalStore[k] = v),
+        store: (name, value) => {
+            if (value === undefined) {
+                return globalStore[name];
+            }
+            globalStore[name] = value;
+            var store = globalStore[name];
+            if (store && typeof store.init === 'function') {
+                store.init.call(store);
+            }
+            return store;
+        },
         raw: (o) => (o && o._t) || o,
         mount: (el) => mount(el),
         unmount: (el) => { if (el && el._m) el._m.unmount(); }

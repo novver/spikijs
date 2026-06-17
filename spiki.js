@@ -133,11 +133,11 @@ var spiki = (() => {
 
     var makeReactive = (obj) => {
         if (!obj || typeof obj !== 'object' || obj._y || obj instanceof Node) return obj;
-        if (obj._p) return obj._p;
+        if (Object.prototype.hasOwnProperty.call(obj, '_p')) return obj._p;
 
         var proxy = new Proxy(obj, {
             get: (target, key, receiver) => {
-                if (key === '_y') return true;
+                if (key === '_y') return receiver === target._p;
                 if (key === '_t') return target;
                 if (key === '_d') return target._d;
                 if (key === '_i') return target._i;
@@ -227,13 +227,15 @@ var spiki = (() => {
     };
     domOps.class = (el, val) => {
         var base = el._n || '';
-        var dyn = '';
+        var obj = Object.create(null);
+        base.split(/\s+/).forEach(c => c && (obj[c] = 1));
+
         if (typeof val === 'string') {
-            dyn = val;
+            val.split(/\s+/).forEach(c => c && (obj[c] = 1));
         } else if (val) {
-            for (var k in val) if (val[k]) dyn += (dyn ? ' ' : '') + k;
-        }
-        var res = base + (base && dyn ? ' ' : '') + dyn;
+            for (var k in val) val[k] ? (obj[k] = 1) : delete obj[k];
+        }        
+        var res = Object.keys(obj).join(' ');
         if (el.className !== res) el.className = res;
     };
 
@@ -381,6 +383,9 @@ var spiki = (() => {
 
                     return parentCleanups.push(effect(() => {
                         var list = evalPath(scope, listPath).val || [];
+                        if (typeof list === 'number') {
+                            list = Array.from({ length: Math.max(0, Math.floor(list)) }, (_, i) => i + 1);
+                        }
                         if (Array.isArray(list)) track(list, 'length');
                         var frag = document.createDocumentFragment();
                         var cursor = end;
@@ -545,7 +550,17 @@ var spiki = (() => {
             var i = els.length;
             while (i--) mount(els[i]);
         },
-        store: (k, v) => v === undefined ? globalStore[k] : (globalStore[k] = v),
+        store: (name, value) => {
+            if (value === undefined) {
+                return globalStore[name];
+            }
+            globalStore[name] = value;
+            var store = globalStore[name];
+            if (store && typeof store.init === 'function') {
+                store.init.call(store);
+            }
+            return store;
+        },
         raw: (o) => (o && o._t) || o,
         mount: (el) => mount(el),
         unmount: (el) => { if (el && el._m) el._m.unmount(); }

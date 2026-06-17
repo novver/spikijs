@@ -1,7 +1,7 @@
 {
   "name": "spikijs",
   "license": "MIT",
-  "version": "1.0.7",
+  "version": "1.1.21",
   "type": "module",
   "repository": {
     "type": "git",
@@ -39,5 +39,15 @@
     "spiki.js",
     "spiki.min.js",
     "spiki.d.ts"
+  ],
+  "keywords": [
+    "javascript",
+    "framework",
+    "reactive",
+    "frontend",
+    "lightweight",
+    "data-binding",
+    "zero-dependency",
+    "spikijs"
   ]
 }
