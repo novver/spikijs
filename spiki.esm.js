@@ -415,7 +415,7 @@ var spiki = (() => {
                                 var rowNodes = Array.prototype.slice.call(clone.childNodes);
                                 var rowCleanups = [];
                                 for(var n=0; n<rowNodes.length; n++) walk(rowNodes[n], rowScope, rowCleanups);
-                                row = { nodes: rowNodes, scope: rowScope, cleanups: rowCleanups };
+                                row = { nodes: Array.prototype.slice.call(clone.childNodes), scope: rowScope, cleanups: rowCleanups };
                                 nodePool[unique] = row;
                             }
                             if (row.nodes[0] !== cursor.nextSibling) {
