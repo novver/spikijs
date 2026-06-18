@@ -342,7 +342,7 @@ var spiki = (() => {
                 var path = negate ? directiveIf.slice(1) : directiveIf;
                 var p = path.indexOf('.') === -1 ? path : path.split('.');
                 
-                parentCleanups.push(() => { cBranch.forEach(c => c()); });
+                parentCleanups.push(() => { var i = cBranch.length; while (i--) cBranch[i](); });
                 
                 return parentCleanups.push(effect(() => {
                     var show = evalPath(scope, p).val;
@@ -355,7 +355,7 @@ var spiki = (() => {
                             end.parentNode.insertBefore(active, end);
                         }
                     } else if (active) {
-                        cBranch.forEach(c => c()); cBranch = []; active.remove(); active = null;
+                        var i = cBranch.length; while (i--) cBranch[i](); cBranch = []; active.remove(); active = null;
                     }
                 }, nextTick));
             }
@@ -534,13 +534,22 @@ var spiki = (() => {
         var instance = {
             unmount: () => {
                 if (state.destroy) state.destroy.call(state);
-                cleanups.forEach(c => c());
+                var i = cleanups.length; while (i--) cleanups[i]();
                 for(var k in listeners) rootElement.removeEventListener(k, handle);
                 rootElement._m = null;
             }
         };
         rootElement._m = instance;
         return instance;
+    };
+
+    var raw = (o) => {
+        if (!o || typeof o !== 'object') return o;
+        var target = o._t || o;
+        if (Array.isArray(target)) return target.map(e => raw(e));
+        var result = {};
+        for (var i in target) result[i] = raw(target[i]);
+        return result;
     };
 
     return {
@@ -561,7 +570,7 @@ var spiki = (() => {
             }
             return store;
         },
-        raw: (o) => (o && o._t) || o,
+        raw: raw,
         mount: (el) => mount(el),
         unmount: (el) => { if (el && el._m) el._m.unmount(); }
     };
