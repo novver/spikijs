@@ -483,7 +483,7 @@ var spiki = (() => {
                                  el.addEventListener('compositionend', () => { el._c = false; handle({target: el, type: 'input'}); });
                              }
 
-                             (el._h[evt] = el._h[evt] || []).unshift({ model: true, p: p });
+                             (el._h[evt] = el._h[evt] || []).push({ model: true, p: p });
                              addListen(evt);
                         } else if (type === 'ref') {
                             state.$refs[attrValue] = el;
@@ -491,7 +491,7 @@ var spiki = (() => {
                             bindings.push({ type: type, path: p });
                         } else {
                             el._s = scope; el._h = el._h || {};
-                            (el._h[type] = el._h[type] || []).push({ p: p });
+                             (el._h[type] = el._h[type] || []).unshift({ p: p });
                             addListen(type);
                         }
                     }
