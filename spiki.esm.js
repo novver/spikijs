@@ -233,7 +233,7 @@ var spiki = (() => {
             for (var k in val) val[k] ? (obj[k] = 1) : delete obj[k];
         }        
         var res = Object.keys(obj).join(' ');
-        if (el.className !== res) el.className = res;
+        if ((el.getAttribute('class') || '') !== res) el.setAttribute('class', res);
     };
 
     var mount = (rootElement, parentScope) => {
@@ -328,7 +328,7 @@ var spiki = (() => {
             var directiveFor = !directiveIf && el.tagName === 'TEMPLATE' && el.getAttribute('s-for');
             var bindings = [];
 
-            if (el.hasAttribute('class') && !el._n) el._n = el.className;
+            if (el.hasAttribute('class') && !el._n) el._n = el.getAttribute('class');
 
             if (directiveIf) {
                 var end = document.createTextNode('');

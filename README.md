@@ -1,525 +1,303 @@
-# Spikijs
+# SpikiJS
 
-Spikijs is a lightweight (~5KB), high-performance JavaScript framework for building interactive interfaces. It works directly with your HTML (no build step required) and uses ES6 Proxies for reactive state management.
+SpikiJS is a lightweight (~5KB), high-performance JavaScript framework for building reactive web applications directly in your HTML without build tools. It utilizes ES6 Proxies for fine-grained reactivity and adheres to a strict Content Security Policy (CSP).
 
-It is designed to be simple, secure (CSP Compliant), and fast.
+---
 
 ## Key Features
 
-* **Tiny Footprint:** Around 5KB gzip. No complex bundlers needed.
-* **Zero Inline Logic:** You cannot write JavaScript logic in HTML attributes (e.g., `count++` is forbidden). This enforces clean separation of concerns and complies with strict Content Security Policies (CSP).
-* **Deep Reactivity:** Automatically tracks changes in nested objects and arrays using Proxies.
-* **Memory Safe:** Explicit `mount()` and `unmount()` methods prevent memory leaks in Single Page Applications.
+- **Tiny Footprint:** Only ~5KB gzip. Works directly in HTML without build tools.
+- **100% CSP Secure:** Safe execution without `eval()` or inline expression vulnerabilities.
+- **Deep Reactivity:** Automatic tracking for nested objects & arrays using ES6 Proxies.
+- **Full SVG Support:** Dynamic attributes and `:class` binding work seamlessly on HTML and SVG.
+- **Auto Loop Context:** `s-for` automatically provides `this.item` and `this.index` in event handlers.
+- **Global Store + `init()`:** Shared state store that automatically runs an `init()` method on registration.
+- **Memory Safe:** Built-in `mount()` and `unmount()` methods to prevent SPA memory leaks.
+
+---
+
+## Content Security Policy (CSP) & Zero Inline Logic
+
+SpikiJS enforces strict separation of concerns to comply with modern web security standards:
+
+1. **No Inline JS Logic:** Do **NOT** write expressions inside attributes (e.g. `<button s-click="count++">` is forbidden).
+2. **No Inline Arguments:** Do **NOT** pass function parameters in HTML (e.g. `<button s-click="save(item)">` is forbidden).
+3. **Method Name Binding:** Always bind function names directly (e.g. `<button s-click="save">`).
+4. **Access State via `this`:** Mutate and access state properties directly inside component methods via `this.variableName`.
 
 ---
 
 ## Installation
 
 ### CDN (Browser)
-Simply add the script tag to your HTML. Spiki will automatically attach to `window.spiki`.
+Include SpikiJS via script tag. Spiki automatically exposes `window.spiki`:
 
 ```html
 <script src="https://unpkg.com/spikijs"></script>
-
 ```
 
-### NPM (Module)
-
-Install via package manager.
-
-```bash
-npm install spikijs
-
-```
-
----
-
-## Usage Strategies
-
-Choose the initialization method that fits your architecture.
-
-### Automatic
-
-Best for simple websites. Spiki scans the entire document for `s-data` attributes.
-
-**HTML:**
-
-```html
-<div s-data="counterApp">
-    Count: <span s-text="count"></span>
-    <button s-click="increment">+</button>
-</div>
-
-```
-
-**JavaScript:**
+### ESM Module (Modern Browsers / NPM)
+Import SpikiJS directly as an ES module:
 
 ```javascript
-import spiki from 'spikijs';
-
-// 1. Register Component
-spiki.data('counterApp', () => ({
-    count: 0,
-    increment() {
-        this.count++;
-    }
-}));
-
-// 2. Start Engine (Scans the whole body)
-spiki.start();
-
-```
-
-### Manual Mount
-
-You control exactly *when* and *where* Spiki starts, and crucially, when it stops to free memory.
-
-**HTML:**
-
-```html
-<div id="my-widget" s-data="counterApp">
-    Count: <span s-text="count"></span>
-    <button s-click="increment">+</button>
-</div>
-
-```
-
-**JavaScript:**
-
-```javascript
-import spiki from 'spikijs';
-
-// 1. Register Component logic
-spiki.data('counterApp', () => ({
-    count: 0,
-    increment() {
-        this.count++;
-    }
-}));
-
-// 2. Select the DOM element
-const myWidget = document.getElementById('my-widget');
-
-// 3. Mount Spiki to this specific element
-const counterApp = spiki.mount(myWidget);
-
-// ... later when removing the element or changing pages ...
-// 4. Unmount to free memory (Stop watchers and event listeners)
-// counterApp.unmount();
-
+import spiki from './spikijs/spiki.esm.js';
 ```
 
 ---
 
-## Quick Start
+## Directives & API Reference
 
-1. **Define HTML**: Add `s-data` to a container.
-2. **Define Logic**: Use `spiki.data()`.
-3. **Start Engine**: Call `spiki.start()`.
+| Directive / API | Description | Example |
+| :--- | :--- | :--- |
+| **`s-data`** | Defines component state scope. | `<div s-data="myApp">` |
+| **`s-text`** | Sets safe text content. | `<span s-text="username"></span>` |
+| **`s-html`** | Sets inner HTML (XSS caution). | `<div s-html="richText"></div>` |
+| **`s-if`** | Conditionally mounts/unmounts DOM nodes (supports `!`). | `<div s-if="!isOnline">Offline</div>` |
+| **`:hidden`** | Toggles native `hidden` visibility (replaces `s-show`, supports `!`). | `<div hidden :hidden="!isVisible">Content</div>` |
+| **`s-for`** | Loops array items inside `<template>` tags. | `<template s-for="(item, idx) in list" s-key="id">` |
+| **`s-key`** | Unique key tracking for list items. | `<template ... s-key="id">` |
+| **`s-model`** | Two-way input data binding. | `<input s-model="query">` |
+| **`s-value`** | One-way value binding. | `<input s-value="formattedText" readonly>` |
+| **`s-effect`** | Automatic reactive watcher (runs on state mutations). | `<div s-effect="saveToStorage">` |
+| **`s-ref`** | Registers DOM element reference in `this.$refs`. | `<input s-ref="textInput">` |
+| **`s-init`** | Executes hook on component mount. | `<div s-init="onMount">` |
+| **`s-destroy`** | Executes hook on component unmount. | `<div s-destroy="onUnmount">` |
+| **`s-ignore`** | Skips DOM compilation for static blocks. | `<div s-ignore>` |
+| **`:[attr]`** | Binds dynamic attributes (HTML & SVG). | `<img :src="userAvatar">` |
+| **`:class`** | Binds dynamic classes (HTML & SVG). | `<div :class="activeClass">` |
+| **`s-[event]`** | Attaches event listener (`s-click`, `s-keyup`, etc.). | `<button s-click="submitForm">` |
+| **`this.$root`** | Accesses component's root container element. | `this.$root.classList.add('active');` |
+| **`this.$refs`** | Object containing all `s-ref` DOM elements. | `this.$refs.textInput.focus();` |
+| **`this.$store`** | Accesses registered global stores. | `this.$store.settings.theme` |
+| **`spiki.store()`** | Registers global store (runs `init()` automatically if present). | `spiki.store('settings', { theme: 'dark', init() {} })` |
+| **`spiki.raw()`** | Unwraps Spiki Proxy to a plain JavaScript object. | `const plainObj = spiki.raw(this.user);` |
+
+---
+
+## Detailed Feature Documentation
+
+### 1. Conditional Rendering (`s-if`) & Visibility (`:hidden`)
+
+SpikiJS provides two ways to control element display:
+
+- **`s-if`**: Completely mounts or unmounts the element from the DOM tree. Supports negation (`!`).
+- **`:hidden`**: Replaces traditional `s-show` by toggling the native `hidden` DOM attribute. Supports negation (`!`).
+
+> **Pro Tip (Prevent FOUC Glitch):** Add the static `hidden` attribute to elements in HTML (`<div hidden :hidden="show">`) so they remain hidden during page load before JS initializes.
 
 ```html
-<div s-data="counterApp">
-    <h1>Count: <span s-text="count"></span></h1>
-    <button s-click="increment">Add +1</button>
-    <button s-click="decrement">Del -1</button>
+<div s-data="visibilityDemo">
+    <button s-click="toggle">Toggle Visibility</button>
+
+    <!-- s-if (Mount/Unmount) -->
+    <div s-if="isOnline">Status: Online</div>
+    <div s-if="!isOnline">Status: Disconnected (Negation Example)</div>
+
+    <!-- :hidden (Visibility Toggle with static hidden attribute to prevent flicker) -->
+    <div hidden :hidden="!isVisible">Visible Content</div>
 </div>
 
-<script src="https://unpkg.com/spikijs"></script>
 <script>
-    // 1. Register Component
-    spiki.data('counterApp', () => ({
-        count: 0,
-        increment() {
-            this.count++;
-        },
-        decrement() {
-            this.count--;
-        }
-    }));
-
-    // 2. Start Spiki
-    document.addEventListener('DOMContentLoaded', () => {
-        spiki.start();
-    });
+spiki.data('visibilityDemo', () => ({
+    isOnline: true,
+    isVisible: true,
+    toggle() {
+        this.isOnline = !this.isOnline;
+        this.isVisible = !this.isVisible;
+    }
+}));
 </script>
-
 ```
 
 ---
 
-## Directives Reference
+### 2. SVG & HTML Dynamic Class Binding (`:class`)
 
-| Directive | Description | Example |
-| --- | --- | --- |
-| **`s-data`** | Defines component scope. | `<div s-data="app">` |
-| **`s-text`** | Sets text content (Safe). | `<span s-text="msg">` |
-| **`s-html`** | Sets innerHTML (Use carefully). | `<div s-html="htmlContent">` |
-| **`s-if`** | Conditional rendering. | `<p s-if="showMe">` |
-| **`s-for`** | Loops content (requires `<template>`). | `<template s-for="item in list">` |
-| **`s-key`** | Unique key for loops (Performance). | `<template ... s-key="id">` |
-| **`s-model`** | Two-way binding (Inputs). | `<input s-model="text">` |
-| **`s-value`** | One-way value binding. | `<input s-value="text">` |
-| **`s-effect`** | Runs function on data change. | `<div s-effect="autoSave">` |
-| **`s-ref`** | Stores DOM reference in `$refs`. | `<input s-ref="myInput">` |
-| **`s-init`** | Runs on mount. | `<div s-init="onLoad">` |
-| **`s-destroy`** | Runs on unmount. | `<div s-destroy="onRemove">` |
-| **`s-ignore`** | Skips compilation (Static content). | `<div s-ignore>` |
-| **`:[attr]`** | Dynamic attribute binding. | `<img :src="imgUrl">` |
-| **`:class`** | Dynamic class toggling. | `<div :class="classConfig">` |
-| **`s-[event]`** | Event listener. | `<button s-click="save">` |
-| **`this.$root`** | Access the root elm. | `this.$root.classList.add('loaded');` |
-| **`this.$store`** | Access the global store. | `this.$store.theme` |
-| **`spiki.store()`** | Get or set global store. | `spiki.store('theme', 'dark')` |
-| **`spiki.raw()`** | Proxy to original object. | `spiki.raw(this.users)` |
+Dynamic class binding works seamlessly on both HTML and SVG elements (preventing `SVGAnimatedString` class errors):
+
+```html
+<div s-data="themeApp">
+    <!-- HTML Element -->
+    <div :class="statusClass">Component Active</div>
+
+    <!-- SVG Element -->
+    <svg :class="iconClass" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+        <circle cx="12" cy="12" r="10"></circle>
+    </svg>
+
+    <button s-click="toggleStatus">Toggle Theme</button>
+</div>
+
+<script>
+spiki.data('themeApp', () => ({
+    isActive: false,
+    toggleStatus() {
+        this.isActive = !this.isActive;
+    },
+    get statusClass() {
+        return this.isActive ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-700';
+    },
+    get iconClass() {
+        return this.isActive ? 'stroke-indigo-500 text-indigo-500' : 'stroke-slate-400 text-slate-400';
+    }
+}));
+</script>
+```
 
 ---
 
-## Detailed Usage Examples
+### 3. List Rendering & Scope Auto-Injection (`s-for`)
 
-### 1. Displaying Data (`s-text`)
-
-Updates the `textContent` of an element. This is safe and prevents XSS attacks.
+Inside `<template s-for="(child, index) in children">`, event handlers do **NOT** require parameters. Spiki automatically injects `this.child` (current item) and `this.index` (current loop index) directly into method execution context:
 
 ```html
-<div s-data="textApp">
-    <p>Message: <span s-text="msg"></span></p>
-    
-    <p>Formatted: <span s-text="formatMsg"></span></p>
-</div>
+<div s-data="todoApp">
+    <input s-model="newItem" s-keyup="checkAdd" placeholder="Add fruit (e.g. Mango)...">
+    <button s-click="addItem">Add</button>
 
-<script>
-spiki.data('textApp', () => ({
-    msg: 'hello world',
-    
-    // Function receives the element as argument
-    formatMsg(el) {
-        // You can manipulate 'el' if needed, but return value is used for text
-        return this.msg.toUpperCase();
-    }
-}));
-</script>
-
-```
-
-> **Note:** If you bind a function to `s-text`, that function receives the DOM element (`el`) as its first argument.
-
-### 2. Inner HTML (`s-html`)
-
-Updates the `innerHTML`. Only use this if you trust the content source.
-
-```html
-<div s-data="htmlApp">
-    <div s-html="rawHtml"></div>
-</div>
-
-<script>
-spiki.data('htmlApp', () => ({
-    rawHtml: '<b>Bold Text</b> and <i>Italic</i>'
-}));
-</script>
-
-```
-
-> **Note:** Just like `s-text`, if you use a function here, it receives the DOM element (`el`) as an argument.
-
-### 3. Dynamic Attributes (`:[attribute]`)
-
-You can bind ANY HTML attribute to a variable by adding a colon `:` before the attribute name.
-
-```html
-<div s-data="attrApp">
-    <img :src="avatarUrl" :alt="avatarAlt">
-    <a :href="profileLink">View Profile</a>
-    
-    <button :disabled="checkStatus">Submit</button>
-</div>
-
-<script>
-spiki.data('attrApp', () => ({
-    avatarUrl: 'https://via.placeholder.com/150',
-    avatarAlt: 'User Avatar',
-    profileLink: '/profile/user1',
-    isLoading: true,
-    
-    checkStatus(el) {
-        // 'el' is the button element
-        if (this.isLoading) {
-            el.style.opacity = '0.5'; // You can touch DOM directly
-            return true; // Return value sets the attribute
-        }
-        el.style.opacity = '1';
-        return false;
-    }
-}));
-</script>
-
-```
-
-> **Note:** The function receives the DOM element (`el`) as an argument. You can use this to perform direct DOM manipulation alongside setting the attribute.
-
-### 4. Initialization (`s-init`)
-
-Runs a function immediately when the component is mounted. This is the perfect place for API calls or setting up 3rd party libraries.
-
-```html
-<div s-data="usersApp" s-init="loadUsers">
-    <p s-if="isLoading">Loading...</p>
     <ul>
-        <template s-for="user in users" s-key="id">
-            <li><span s-text="user.name"></span></li>
-        </template>
-    </ul>
-</div>
-
-<script>
-spiki.data('usersApp', () => ({
-    isLoading: true,
-    users: [],
-    
-    loadUsers(el) {
-        // 'el' is the div containing s-init
-        console.log("Component mounted on:", el);
-        
-        var self = this;
-        fetch('https://jsonplaceholder.typicode.com/users')
-            .then(function(r) { return r.json() })
-            .then(function(data) {
-                self.users = data;
-                self.isLoading = false;
-            });
-    }
-}));
-</script>
-
-```
-
-> **Note:** The function receives the element (`el`) where the directive is placed.
-
-### 5. Event Listeners (`s-[event]`)
-
-Listen to any DOM event using the `s-` prefix.
-
-```html
-<div s-data="eventApp">
-    <button s-click="handleClick">Click Me</button>
-</div>
-
-<script>
-spiki.data('eventApp', () => ({
-    handleClick(e) {
-        // 'e' is the standard Native Event Object
-        // 'e.target' gives you the element
-        e.preventDefault();
-        alert('Button Clicked!');
-    }
-}));
-</script>
-
-```
-
-> **Note:** Events receive the native Event Object (`e`). You can access the element via `e.target` or `e.currentTarget`.
-
-### 6. Side Effects (`s-effect`)
-
-Use `s-effect` to run a function automatically whenever its dependencies change.
-
-```html
-<div s-data="saveApp" s-effect="autoSave">
-    <textarea s-model="note"></textarea>
-    <span s-text="status"></span>
-</div>
-
-<script>
-spiki.data('saveApp', () => ({
-    note: localStorage.getItem('note') || '',
-    status: '',
-    
-    autoSave() {
-        localStorage.setItem('note', this.note);
-        this.status = 'Saved!';
-    }
-}));
-</script>
-
-```
-
-> **Note:** The function receives the element (`el`) as an argument. Useful if you need to update something visual on the container when data changes.
-
-### 7. Form Inputs (`s-model` vs `s-value`)
-
-* **`s-model` (Two-Way):** Updates data when user types, and updates input when data changes.
-* **`s-value` (One-Way):** Only updates the input when data changes.
-
-```html
-<div s-data="formApp">
-    <input type="text" s-model="username">
-    
-    <input type="text" s-value="previewName" readonly>
-</div>
-
-<script>
-spiki.data('formApp', () => ({
-    username: 'john_doe',
-    
-    get previewName() {
-        return this.username.toUpperCase();
-    }
-}));
-</script>
-
-```
-
----
-
-## Mastering Lists (`s-for`)
-
-### 1. Basic Loop Requirement
-
-You **MUST** use the `<template>` tag. Spiki uses the template to stamp out copies of your HTML.
-
-```html
-<ul>
-    <template s-for="user in users" s-key="id">
-        <li><span s-text="user.name"></span></li>
-    </template>
-</ul>
-
-```
-
-### 2. Accessing Data Inside Loop (`this.item`)
-
-When you trigger an event inside a loop, Spiki automatically injects the current item into `this`. The property name matches your loop alias.
-
-```html
-<div s-data="shopApp">
-    <ul>
-        <template s-for="product in products" s-key="id">
+        <template s-for="(fruit, idx) in fruits" s-key="id">
             <li>
-                <span s-text="product.name"></span>
-                <button s-click="selectProduct">Select</button>
+                #<span s-text="idx"></span>: <span s-text="fruit.name"></span>
+                <!-- No parameters needed! this.fruit and this.idx are auto-injected -->
+                <button s-click="removeItem">Delete</button>
             </li>
         </template>
     </ul>
 </div>
 
 <script>
-spiki.data('shopApp', () => ({
-    products: [
-        { id: 1, name: 'Laptop' },
-        { id: 2, name: 'Phone' }
+spiki.data('todoApp', () => ({
+    newItem: 'Mango',
+    fruits: [
+        { id: 1, name: 'Apple' },
+        { id: 2, name: 'Banana' }
     ],
-    selectProduct() {
-        // 'this.product' is automatically available
-        console.log('You selected:', this.product.name);
+    checkAdd(e) {
+        if (e.key === 'Enter') this.addItem();
+    },
+    addItem() {
+        if (!this.newItem.trim()) return;
+        this.fruits.push({ id: Date.now(), name: this.newItem.trim() });
+        this.newItem = '';
+    },
+    removeItem() {
+        // Automatically reads this.idx auto-injected by Spiki loop scope
+        if (typeof this.idx === 'number') {
+            this.fruits.splice(this.idx, 1);
+        }
     }
 }));
 </script>
-
-```
-
-### 3. Accessing Index
-
-You can get the current index by using parentheses: `(item, index) in array`.
-
-```html
-<template s-for="(item, i) in list" s-key="id">
-    <button s-click="remove">
-        Remove Index <span s-text="i"></span>
-    </button>
-</template>
-
-<script>
-spiki.data('listApp', () => ({
-    list: ['A', 'B', 'C'],
-    remove() {
-        // 'this.i' is automatically available
-        this.list.splice(this.i, 1);
-    }
-}));
-</script>
-
 ```
 
 ---
 
-## Advanced Features
+### 4. Instance API: `this.$refs` & `this.$root`
 
-### DOM References (`s-ref`)
-
-Sometimes you need to access the raw DOM element (e.g., to focus an input or play a video).
+Access raw DOM nodes without query selectors using `this.$refs` and `this.$root`:
 
 ```html
-<div s-data="refApp">
-    <input s-ref="myInput" type="text">
-    <button s-click="focusMe">Focus Input</button>
+<div s-data="refDemo">
+    <input s-ref="textInput" type="text" value="Spiki Ref Input">
+    <button s-click="focusInput">Focus</button>
+    <button s-click="highlightContainer">Highlight Container</button>
 </div>
 
 <script>
-spiki.data('refApp', () => ({
-    focusMe() {
-        // Access DOM element via this.$refs
-        this.$refs.myInput.focus();
+spiki.data('refDemo', () => ({
+    focusInput() {
+        // Access raw HTMLInputElement directly
+        this.$refs.textInput.focus();
+        this.$refs.textInput.select();
+    },
+    highlightContainer() {
+        // Manipulate component container directly
+        this.$root.classList.toggle('ring-2');
     }
 }));
 </script>
-
 ```
 
 ---
 
-## Core Concepts
+### 5. Global Store (`spiki.store()`) with Auto `init()` Execution
 
-### Component Instance (`this`)
-
-Inside your functions, `this` refers to your component state.
-
-> **Warning:** Do not use arrow functions for methods (`func: () => {}`) if you need `this`. Use method shorthand (`func() {}`) instead.
-
-Spiki injects helper properties:
-
-* **`this.$root`**: The HTML element containing the component.
-* **`this.$refs`**: Access elements marked with `s-ref`.
-* **`this.$store`**: Access the global store.
-* **`this.$parent`**: Access the parent component.
-
-### Global Store
-
-Share state across multiple components.
+Register shared global state with `spiki.store('name', stateObject)`. If your store defines an `init()` method, Spiki executes `store.init.call(store)` automatically upon registration:
 
 ```javascript
-// 1. Define Store
-spiki.store('user', {
-    name: 'John Doe',
-    isLoggedIn: true
+// 1. Register store with automatic init hook
+spiki.store('settings', {
+    theme: 'dark',
+    initialized: false,
+    init() {
+        // Runs automatically when store is registered!
+        this.theme = localStorage.getItem('theme') || 'dark';
+        this.initialized = true;
+    }
 });
 
-// 2. Use in Component
-spiki.data('profile', () => ({
-    get userName() {
-        return this.$store.user.name; // Reactive!
+// 2. Consume store inside any component
+spiki.data('headerApp', () => ({
+    get currentTheme() {
+        return this.$store.settings.theme; // Reactive store subscription!
+    },
+    toggleTheme() {
+        this.$store.settings.theme = this.$store.settings.theme === 'dark' ? 'light' : 'dark';
     }
 }));
-
-```
-
-### `spiki.raw(proxy)`
-
-Get the original object from a Spiki proxy. Useful for console logging or API calls.
-
-```javascript
-const cleanData = spiki.raw(this.myData);
-console.log(cleanData); 
-
 ```
 
 ---
 
-## Browser Support
+### 6. Unwrapping Reactive Proxies (`spiki.raw()`)
 
-Spiki requires a browser that supports **ES6 Proxy**.
+Spiki wraps state objects in ES6 Proxies. Use `spiki.raw(proxy)` to unwrap state back into plain JavaScript objects before calling `JSON.stringify()`, logging, or sending network payloads:
 
-* **Supported:** Chrome, Firefox, Edge, Safari (Modern versions).
-* **Not Supported:** Internet Explorer 11.
+```javascript
+spiki.data('userProfile', () => ({
+    user: { name: 'Alice', role: 'Admin' },
+    
+    saveUser() {
+        // Extract raw, un-proxied JS object
+        const plainData = spiki.raw(this.user);
+        
+        fetch('/api/user', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(plainData)
+        });
+    }
+}));
+```
+
+---
+
+### 7. Reactive Side Effects (`s-effect`)
+
+Use `s-effect="handler"` to run automatic reactive watchers. 
+
+> **Warning:** Do **NOT** mutate component state properties inside `s-effect` methods (e.g. `this.runs++`), as modifying state read inside an effect causes an infinite loop. Use `s-effect` strictly for external side effects like `localStorage`, network calls, or direct DOM updates.
+
+```html
+<div s-data="noteApp" s-effect="autoSave">
+    <input type="text" s-model="note">
+</div>
+
+<script>
+spiki.data('noteApp', () => ({
+    note: 'Hello Spiki',
+    autoSave() {
+        // Pure side effect: read state and write to localStorage
+        try {
+            localStorage.setItem('user_note', this.note);
+        } catch(e) {}
+    }
+}));
+</script>
+```
+
+---
 
 ## License
 
