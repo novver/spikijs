@@ -16,14 +16,17 @@ SpikiJS is a lightweight (~5KB), high-performance JavaScript framework for build
 
 ---
 
-## Content Security Policy (CSP) & Zero Inline Logic
+## Directive Rules & CSP Security
 
-SpikiJS enforces strict separation of concerns to comply with modern web security standards:
+SpikiJS enforces strict security and architectural separation of concerns:
 
-1. **No Inline JS Logic:** Do **NOT** write expressions inside attributes (e.g. `<button s-click="count++">` is forbidden).
-2. **No Inline Arguments:** Do **NOT** pass function parameters in HTML (e.g. `<button s-click="save(item)">` is forbidden).
-3. **Method Name Binding:** Always bind function names directly (e.g. `<button s-click="save">`).
-4. **Access State via `this`:** Mutate and access state properties directly inside component methods via `this.variableName`.
+1. **No Inline JS Code:** HTML attributes cannot contain JavaScript code, expressions, or operators (e.g. `count++` or `a + b` are invalid).
+   - **Allowed Exception:** Boolean directives (`s-if`, `:hidden`, `:disabled`, `:checked`) evaluate state property names directly or with a logical NOT (`!`) operator (e.g. `s-if="isReady"` or `:hidden="!isVisible"`).
+
+2. **No Attribute Parameters:** Function parameters are not supported inside HTML attributes (e.g. `s-click="save(item)"` is invalid).
+   - **Correct Pattern:** Bind only the method name (`s-click="save"`). Inside loop templates, Spiki automatically injects context variables directly into `this` (e.g. `this.item`, `this.index`).
+
+3. **State Access via `this`:** All data reading and state mutations must be performed inside component methods using the `this` context (e.g. `this.count++`).
 
 ---
 

@@ -163,7 +163,7 @@ var spiki = (() => {
                      while (proto && proto !== Object.prototype) {
                         if (Object.prototype.hasOwnProperty.call(proto, key)) {
                             var res = Reflect.set(proto, key, val);
-                            if (!pauseTracking && val !== old) trigger(target, key);
+                            if (!pauseTracking && (val !== old || (val && typeof val === 'object'))) trigger(target, key);
                             return res;
                         }
                         proto = Object.getPrototypeOf(proto);
@@ -172,7 +172,7 @@ var spiki = (() => {
 
                 var res = Reflect.set(target, key, val, receiver);
                 if (!pauseTracking && res) {
-                    if (!hadKey || val !== old) {
+                    if (!hadKey || val !== old || (val && typeof val === 'object')) {
                         trigger(target, key);
                         if (isArr) trigger(target, 'length');
                         else if (!hadKey) trigger(target, '_k');
