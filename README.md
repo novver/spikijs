@@ -26,7 +26,10 @@ SpikiJS enforces strict security and architectural separation of concerns:
 2. **No Attribute Parameters:** Function parameters are not supported inside HTML attributes (e.g. `s-click="save(item)"` is invalid).
    - **Correct Pattern:** Bind only the method name (`s-click="save"`). Inside loop templates, Spiki automatically injects context variables directly into `this` (e.g. `this.item`, `this.index`).
 
-3. **State Access via `this`:** All data reading and state mutations must be performed inside component methods using the `this` context (e.g. `this.count++`).
+3. **No Dot Modifiers:** Attribute names do **NOT** support dots (`.`) or modifier suffixes (e.g. `s-submit.prevent="submitForm"` is invalid).
+   - **Correct Pattern:** Bind clean directive names (`s-submit="submitForm"`). Handle event options like `e.preventDefault()` directly inside your JS method.
+
+4. **State Access via `this`:** All data reading and state mutations must be performed inside component methods using the `this` context (e.g. `this.count++`).
 
 ---
 
@@ -39,11 +42,49 @@ Include SpikiJS via script tag. Spiki automatically exposes `window.spiki`:
 <script src="https://unpkg.com/spikijs"></script>
 ```
 
-### ESM Module (Modern Browsers / NPM)
+### ES Module / NPM
+Install SpikiJS via npm package manager:
+
+```bash
+npm install spikijs
+```
+
 Import SpikiJS directly as an ES module:
 
 ```javascript
-import spiki from './spikijs/spiki.esm.js';
+import spiki from 'spikijs';
+```
+
+---
+
+## Quick Start
+
+```html
+<div s-data="counterApp">
+    <h2>Count: <span s-text="count"></span></h2>
+    <button s-click="increment">+</button>
+    <button s-click="decrement">-</button>
+</div>
+
+<script type="module">
+    import spiki from 'spikijs';
+
+    // 1. Register Component State & Methods
+    spiki.data('counterApp', () => ({
+        count: 0,
+        increment() {
+            this.count++;
+        },
+        decrement() {
+            this.count--;
+        }
+    }));
+
+    // 2. Start Engine
+    document.addEventListener('DOMContentLoaded', () => {
+        spiki.start();
+    });
+</script>
 ```
 
 ---
