@@ -2,6 +2,8 @@
 
 SpikiJS is a lightweight (~5KB), high-performance JavaScript framework for building reactive web applications directly in your HTML without build tools. It utilizes ES6 Proxies for fine-grained reactivity and adheres to a strict Content Security Policy (CSP).
 
+📖 **Live Documentation & Demos:** [https://spikijs.pages.dev/](https://spikijs.pages.dev/)
+
 ---
 
 ## Key Features
@@ -109,12 +111,14 @@ import spiki from 'spikijs';
 | **`s-ignore`** | Skips DOM compilation for static blocks. | `<div s-ignore>` |
 | **`:[attr]`** | Binds dynamic attributes (HTML & SVG). | `<img :src="userAvatar">` |
 | **`:class`** | Binds dynamic classes (HTML & SVG). | `<div :class="activeClass">` |
-| **`s-[event]`** | Attaches event listener (`s-click`, `s-keyup`, etc.). | `<button s-click="submitForm">` |
+| **`s-click`** | Listens to native click events and executes component method. | `<button s-click="saveItem">` |
+| **`s-[event]`** | Attaches any native event listener (`s-input`, `s-keyup`, `s-change`, etc.). | `<input s-input="handleInput">` |
 | **`this.$root`** | Accesses component's root container element. | `this.$root.classList.add('active');` |
 | **`this.$refs`** | Object containing all `s-ref` DOM elements. | `this.$refs.textInput.focus();` |
 | **`this.$store`** | Accesses registered global stores. | `this.$store.settings.theme` |
 | **`spiki.store()`** | Registers global store (runs `init()` automatically if present). | `spiki.store('settings', { theme: 'dark', init() {} })` |
 | **`spiki.raw()`** | Unwraps Spiki Proxy to a plain JavaScript object. | `const plainObj = spiki.raw(this.user);` |
+| **`spiki.compose()`** | Merges modular state objects/factories into a single scope. | `spiki.compose(createAuth, createCart)` |
 
 ---
 
@@ -343,6 +347,39 @@ spiki.data('noteApp', () => ({
 
 ---
 
+### 8. Modular State Composition (`spiki.compose`)
+
+For large applications, organize code into smaller modules and merge them using `spiki.compose()`. It preserves getters, setters, and computed properties while allowing methods across modules to share state via `this`:
+
+```javascript
+import spiki from 'spikijs';
+
+const createCounterModule = () => ({
+    count: 0,
+    increment() { this.count++; }
+});
+
+const createThemeModule = () => ({
+    darkMode: false,
+    toggleTheme() { this.darkMode = !this.darkMode; }
+});
+
+spiki.data('app', () =>
+    spiki.compose(
+        createCounterModule,
+        createThemeModule,
+        {
+            init() {
+                console.log('App ready, initial count:', this.count);
+            }
+        }
+    )
+);
+```
+
+---
+
 ## License
 
 MIT License.
+

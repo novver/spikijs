@@ -388,7 +388,7 @@ var spiki = (() => {
                         }
                         if (Array.isArray(list)) track(list, 'length');
                         var frag = document.createDocumentFragment();
-                        var cursor = end;
+                        var anchor = end.nextSibling;
                         usedKeys = Object.create(null);
                         var isArr = Array.isArray(list);
                         var keys = isArr ? list : Object.keys(list);
@@ -421,13 +421,15 @@ var spiki = (() => {
                                 row = { nodes: Array.prototype.slice.call(clone.childNodes), scope: rowScope, cleanups: rowCleanups };
                                 nodePool[unique] = row;
                             }
-                            if (row.nodes[0] !== cursor.nextSibling) {
-                                for(var n=0; n<row.nodes.length; n++) frag.appendChild(row.nodes[n]);
-                                cursor.parentNode.insertBefore(frag, cursor.nextSibling);
+                            if (row.nodes[0] === anchor) {
+                                if (frag.childNodes.length) end.parentNode.insertBefore(frag, anchor);
+                                anchor = row.nodes[row.nodes.length - 1].nextSibling;
+                            } else {
+                                for (var n = 0; n < row.nodes.length; n++) frag.appendChild(row.nodes[n]);
                             }
-                            cursor = row.nodes[row.nodes.length-1];
                             usedKeys[unique] = true;
                         }
+                        if (frag.childNodes.length) end.parentNode.insertBefore(frag, anchor);
                         for (var k in nodePool) if (!usedKeys[k]) {
                             nodePool[k].cleanups.forEach(c => c());
                             nodePool[k].nodes.forEach(n => n.remove());
@@ -552,8 +554,23 @@ var spiki = (() => {
         return result;
     };
 
+    var compose = (...modules) => {
+        var target = {};
+        for (var i = 0; i < modules.length; i++) {
+            var mod = modules[i];
+            if (mod) {
+                Object.defineProperties(
+                    target,
+                    Object.getOwnPropertyDescriptors(typeof mod === 'function' ? mod() : mod)
+                );
+            }
+        }
+        return target;
+    };
+
     return {
         data: (name, factory) => { cmpReg[name] = factory; },
+        compose: compose,
         start: () => {
             var els = document.querySelectorAll('[s-data]');
             var i = els.length;

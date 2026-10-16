@@ -92,6 +92,11 @@ export interface Spiki {
      * Returns the original object from a Spiki Proxy.
      */
     raw<T>(object: T): T;
+
+    /**
+     * Composes multiple state modules/factories into a single object while preserving getters and setters.
+     */
+    compose<T = any>(...modules: any[]): T;
 }
 
 declare const spiki: Spiki;
