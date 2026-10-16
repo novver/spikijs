@@ -141,13 +141,40 @@ var spiki = (() => {
                 if (key === '_t') return target;
                 if (key === '_d') return target._d;
                 if (key === '_i') return target._i;
+                if (key === '_c') return target._c;
 
                 if (Array.isArray(target) && arrInst.hasOwnProperty(key)) return arrInst[key];
                 var desc = Object.getOwnPropertyDescriptor(target, key);
                 if (desc && desc.get) {
-                    var cacheKey = '_' + key;
-                    if (!(cacheKey in target)) effect(() => receiver[cacheKey] = desc.get.call(receiver));
-                    return receiver[cacheKey];
+                    var c = target._c || (Object.defineProperty(target, '_c', { 
+                        value: Object.create(null) 
+                    }), target._c);
+                    
+                    var comp = c[key];
+                    if (!comp) {
+                        var runner = () => {
+                            cleanup(runner);
+                            var prev = activeEffect;
+                            activeEffect = runner;
+                            try { 
+                                comp.d = false; 
+                                comp.v = desc.get.call(receiver); 
+                            } finally { 
+                                activeEffect = prev; 
+                            }
+                        };
+                        runner.deps = [];
+                        runner.sched = () => { 
+                            if (!comp.d) { 
+                                comp.d = true; 
+                                trigger(target, key); 
+                            } 
+                        };
+                        comp = c[key] = { r: runner, d: true, v: undefined };
+                    }
+                    if (comp.d) comp.r();
+                    track(target, key);
+                    return (comp.v && typeof comp.v === 'object' && !(comp.v instanceof Node)) ? makeReactive(comp.v) : comp.v;
                 }
                 track(target, key);
                 var res = Reflect.get(target, key, receiver);
@@ -539,6 +566,7 @@ var spiki = (() => {
                 if (state.destroy) state.destroy.call(state);
                 var i = cleanups.length; while (i--) cleanups[i]();
                 for(var k in listeners) rootElement.removeEventListener(k, handle);
+                if (state._c) for (var k in state._c) cleanup(state._c[k].r);
                 rootElement._m = null;
             }
         };
