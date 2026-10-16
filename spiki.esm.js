@@ -260,7 +260,7 @@ var spiki = (() => {
             var limit = rootElement.parentNode;
             var type = event.type; 
         
-            while (target && target !== limit) {
+            while (target && target !== limit && !event.cancelBubble) {
                 var handlers = target._h && target._h[type];
                 
                 if (handlers) {
@@ -302,6 +302,7 @@ var spiki = (() => {
                                 result.val.call(result.ctx, event);
                             }
                         }
+                        if (event.cancelBubble) break;
                     }
                 }
                 target = target.parentNode;
