@@ -182,7 +182,7 @@ var spiki = (() => {
                 }
 
                 if (Object.prototype.hasOwnProperty.call(target, key)) {
-                    track(target, Array.isArray(target) ? 'length' : key);
+                    track(target, key);
                 }
                 
                 var res = Reflect.get(target, key, receiver);
@@ -550,7 +550,7 @@ var spiki = (() => {
                 walk(child, scope, parentCleanups); 
                 child = nextSibling; 
             }
-
+            
             if (bindings.length) {
                 parentCleanups.push(effect(() => {
                     var i = bindings.length;
