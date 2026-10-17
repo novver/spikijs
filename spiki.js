@@ -583,23 +583,16 @@ var spiki = (() => {
         return result;
     };
 
-    var compose = (...modules) => {
-        var target = {};
-        for (var i = 0; i < modules.length; i++) {
-            var mod = modules[i];
-            if (mod) {
-                Object.defineProperties(
-                    target,
-                    Object.getOwnPropertyDescriptors(typeof mod === 'function' ? mod() : mod)
-                );
-            }
-        }
-        return target;
-    };
-
     return {
-        data: (name, factory) => { cmpReg[name] = factory; },
-        compose: compose,
+        data: (name, ...fns) => {
+            cmpReg[name] = fns.length === 1 ? fns[0] : () => {
+                var target = {};
+                for (var i = 0; i < fns.length; i++) {
+                    Object.defineProperties(target, Object.getOwnPropertyDescriptors(fns[i]()));
+                }
+                return target;
+            };
+        },
         start: () => {
             var els = document.querySelectorAll('[s-data]');
             var i = els.length;

@@ -117,8 +117,8 @@ import spiki from 'spikijs';
 | **`this.$refs`** | Object containing all `s-ref` DOM elements. | `this.$refs.textInput.focus();` |
 | **`this.$store`** | Accesses registered global stores. | `this.$store.settings.theme` |
 | **`spiki.store()`** | Registers global store (runs `init()` automatically if present). | `spiki.store('settings', { theme: 'dark', init() {} })` |
+| **`spiki.data()`** | Registers component state with one or more modules/factories. | `spiki.data('app', createAuth, createCart)` |
 | **`spiki.raw()`** | Unwraps Spiki Proxy to a plain JavaScript object. | `const plainObj = spiki.raw(this.user);` |
-| **`spiki.compose()`** | Merges modular state objects/factories into a single scope. | `spiki.compose(createAuth, createCart)` |
 
 ---
 
@@ -347,9 +347,9 @@ spiki.data('noteApp', () => ({
 
 ---
 
-### 8. Modular State Composition (`spiki.compose`)
+### 8. Modular State Composition
 
-For large applications, organize code into smaller modules and merge them using `spiki.compose()`. It preserves getters, setters, and computed properties while allowing methods across modules to share state via `this`:
+For large applications, organize code into smaller modules and pass them directly into `spiki.data()`. It preserves getters, setters, and computed properties while allowing methods across modules to share state via `this`:
 
 ```javascript
 import spiki from 'spikijs';
@@ -364,16 +364,15 @@ const createThemeModule = () => ({
     toggleTheme() { this.darkMode = !this.darkMode; }
 });
 
-spiki.data('app', () =>
-    spiki.compose(
-        createCounterModule,
-        createThemeModule,
-        {
-            init() {
-                console.log('App ready, initial count:', this.count);
-            }
+// Pass multiple factory functions directly:
+spiki.data('app',
+    createCounterModule,
+    createThemeModule,
+    () => ({
+        init() {
+            console.log('App ready, initial count:', this.count);
         }
-    )
+    })
 );
 ```
 

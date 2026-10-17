@@ -56,11 +56,11 @@ export type ComponentFactory<T> = () => T & ThisType<T & SpikiInstance>;
 
 export interface Spiki {
     /**
-     * Registers a new component.
+     * Registers a new component with one or more modules/factories.
      * @param name Name matching 's-data' in HTML.
-     * @param factory Function returning the state object.
+     * @param modules Factory functions or objects returning/containing state.
      */
-    data<T extends object>(name: string, factory: ComponentFactory<T>): void;
+    data(name: string, ...modules: any[]): void;
 
     /**
      * Scans the document and mounts all components.
@@ -92,11 +92,6 @@ export interface Spiki {
      * Returns the original object from a Spiki Proxy.
      */
     raw<T>(object: T): T;
-
-    /**
-     * Composes multiple state modules/factories into a single object while preserving getters and setters.
-     */
-    compose<T = any>(...modules: any[]): T;
 }
 
 declare const spiki: Spiki;
