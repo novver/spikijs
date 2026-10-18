@@ -63,6 +63,29 @@ var spiki = (() => {
         return { ctx: ctx, val: val };
     };
 
+    var getLIS = (arr) => {
+        var p = arr.slice(), res = [], i, j, u, v, c;
+        for (i = 0; i < arr.length; i++) {
+            var arrI = arr[i];
+            if (arrI < 0) continue;
+            if (!res.length) { res.push(i); continue; }
+            j = res[res.length - 1];
+            if (arr[j] < arrI) { p[i] = j; res.push(i); continue; }
+            u = 0; v = res.length - 1;
+            while (u < v) {
+                c = (u + v) >> 1;
+                arr[res[c]] < arrI ? u = c + 1 : v = c;
+            }
+            if (arrI < arr[res[u]]) {
+                if (u > 0) p[i] = res[u - 1];
+                res[u] = i;
+            }
+        }
+        u = res.length; v = res[u - 1];
+        while (u-- > 0) { res[u] = v; v = p[v]; }
+        return res;
+    };
+
     // -------------------------------------------------------------------------
     // 2. REACTIVITY
     // -------------------------------------------------------------------------
@@ -306,13 +329,8 @@ var spiki = (() => {
         
                         if (handler.model) {
                             var val = target.type === 'checkbox' ? target.checked : target.value;
-                            if (typeof val === 'string') {
-                                var clean = val.trim();
-                                if (clean && isFinite(clean)) {
-                                     if (clean.charCodeAt(0) !== 48 || clean.length === 1 || clean.charCodeAt(1) === 46) {
-                                        val = Number(clean);
-                                    }
-                                }
+                            if (target.type === 'number' || target.type === 'range') {
+                                val = val === '' ? '' : +val;
                             }
                             if (typeof path === 'string') {
                                 if (scope) scope[path] = val;
@@ -402,12 +420,11 @@ var spiki = (() => {
 
                     var end = document.createTextNode('');
                     var nodePool = Object.create(null);
-                    var usedKeys;
                     el.replaceWith(end);
 
-                     parentCleanups.push(() => { 
-                          for(var k in nodePool) nodePool[k].cleanups.forEach(c => c()); 
-                     });
+                    parentCleanups.push(() => { 
+                        for (var k in nodePool) nodePool[k].cleanups.forEach(c => c()); 
+                    });
 
                     return parentCleanups.push(effect(() => {
                         var list = evalPath(scope, listPath).val || [];
@@ -415,22 +432,30 @@ var spiki = (() => {
                             list = Array.from({ length: Math.max(0, Math.floor(list)) }, (_, i) => i + 1);
                         }
                         if (Array.isArray(list)) track(list, 'length');
-                        var frag = document.createDocumentFragment();
-                        var anchor = end.nextSibling;
-                        usedKeys = Object.create(null);
+
                         var isArr = Array.isArray(list);
                         var keys = isArr ? list : Object.keys(list);
                         var len = isArr ? list.length : keys.length;
 
+                        var usedKeys = Object.create(null);
+                        var newRows = new Array(len);
+                        var seqIndices = new Array(len);
+                        var moved = false, maxOldIdx = 0;
+
+                        // 1. Reuse/create rows & detect index movement
                         for (var i = 0; i < len; i++) {
                             var key = isArr ? i : keys[i];
-                            var item = isArr ? list[i] : list[key];
+                            var item = list[key];
                             var unique = (keyPath ? evalPath(item, keyPath).val : null) ?? key;
                             if (usedKeys[unique]) unique += '_' + i;
+                            usedKeys[unique] = true;
+
                             var row = nodePool[unique];
                             if (row) {
                                 row.scope[alias] = item;
                                 if (idxAlias) row.scope[idxAlias] = key;
+                                seqIndices[i] = row.oldIdx;
+                                row.oldIdx < maxOldIdx ? (moved = true) : (maxOldIdx = row.oldIdx);
                             } else {
                                 var clone = el.content.cloneNode(true);
                                 var rowData = Object.create(scope);
@@ -439,24 +464,47 @@ var spiki = (() => {
                                 var rowScope = makeReactive(rowData);
                                 var rowNodes = Array.prototype.slice.call(clone.childNodes);
                                 var rowCleanups = [];
-                                for(var n=0; n<rowNodes.length; n++) walk(rowNodes[n], rowScope, rowCleanups);
-                                row = { nodes: Array.prototype.slice.call(clone.childNodes), scope: rowScope, cleanups: rowCleanups };
-                                nodePool[unique] = row;
+                                for (var n = 0; n < rowNodes.length; n++) walk(rowNodes[n], rowScope, rowCleanups);
+                                nodePool[unique] = row = { nodes: rowNodes, scope: rowScope, cleanups: rowCleanups, oldIdx: -1 };
+                                seqIndices[i] = -1;
                             }
-                            if (row.nodes[0] === anchor) {
-                                if (frag.childNodes.length && end.parentNode) end.parentNode.insertBefore(frag, anchor);
-                                anchor = row.nodes[row.nodes.length - 1].nextSibling;
-                            } else {
-                                for (var n = 0; n < row.nodes.length; n++) frag.appendChild(row.nodes[n]);
+                            row.oldIdx = i;
+                            newRows[i] = row;
+                        }
+
+                        // 2. Cleanup obsolete nodes
+                        for (var k in nodePool) {
+                            if (!usedKeys[k]) {
+                                nodePool[k].cleanups.forEach(c => c());
+                                nodePool[k].nodes.forEach(n => n.remove());
+                                delete nodePool[k];
                             }
-                            usedKeys[unique] = true;
                         }
-                        if (frag.childNodes.length && end.parentNode) end.parentNode.insertBefore(frag, anchor);
-                        for (var k in nodePool) if (!usedKeys[k]) {
-                            nodePool[k].cleanups.forEach(c => c());
-                            nodePool[k].nodes.forEach(n => n.remove());
-                            delete nodePool[k];
+
+                        // 3. Move/insert DOM nodes via LIS backwards
+                        var parent = end.parentNode;
+                        if (parent && len > 0) {
+                            var lis = moved ? getLIS(seqIndices) : [];
+                            var lisIdx = lis.length - 1;
+                            var nextSibling = end;
+
+                            for (var i = len - 1; i >= 0; i--) {
+                                var row = newRows[i];
+                                var nodes = row.nodes;
+                                var isNew = seqIndices[i] === -1;
+
+                                if (isNew || (moved && (lisIdx < 0 || i !== lis[lisIdx]))) {
+                                    for (var n = nodes.length - 1; n >= 0; n--) {
+                                        parent.insertBefore(nodes[n], nextSibling);
+                                        nextSibling = nodes[n];
+                                    }
+                                } else {
+                                    if (moved) lisIdx--;
+                                    nextSibling = nodes[0];
+                                }
+                            }
                         }
+
                         var sel = end.parentElement && end.parentElement.closest('select');
                         if (sel && sel._v !== undefined && sel.value != sel._v) sel.value = sel._v == null ? '' : sel._v;
                     }, nextTick));
